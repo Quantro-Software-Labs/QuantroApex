@@ -1,5 +1,6 @@
 import { prisma } from './prisma.js';
-import { defaultBrokerClient, IBrokerClient } from './broker/alpaca_client.js';
+import { defaultBrokerClient } from './broker/alpaca_client.js';
+import { IBrokerClient } from './broker/broker_client.js';
 import { validateTradeRisk } from './risk_enforcer.js';
 import { eventBus } from './events/event_bus.js';
 import { AssetClass, OrderSide, OrderType, OrderStatus } from '@prisma/client';

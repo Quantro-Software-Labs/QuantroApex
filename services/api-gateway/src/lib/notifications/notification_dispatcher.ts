@@ -16,9 +16,9 @@ export class NotificationDispatcher {
     if (!prefs) return false;
 
     // Check user notification preferences
-    if (payload.category === 'TRADE' && !prefs.tradeAlerts) return false;
-    if (payload.category === 'RISK' && !prefs.riskAlerts) return false;
-    if (payload.category === 'ADVISORY' && !prefs.advisorySignals) return false;
+    if (payload.category === 'TRADE' && !prefs.pushEnabled) return false;
+    if (payload.category === 'RISK' && !prefs.lossAlertsEnabled) return false;
+    if (payload.category === 'ADVISORY' && !prefs.milestoneAlerts) return false;
 
     // Structured log: partial userId for traceability, no sensitive content in log body
     // TODO: Replace with actual Firebase Admin SDK FCM dispatch before production

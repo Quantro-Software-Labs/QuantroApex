@@ -76,12 +76,12 @@ export async function buildApp() {
   await app.register(notificationRoutes, { prefix: '/notifications' });
 
   // ── Global Error Handler ─────────────────────────────────────────────────
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error: any, _request, reply) => {
     app.log.error(error);
-    const statusCode = error.statusCode ?? 500;
+    const statusCode = error?.statusCode ?? 500;
     reply.status(statusCode).send({
-      error: error.name ?? 'InternalServerError',
-      message: statusCode === 500 ? 'An unexpected error occurred' : error.message,
+      error: error?.name ?? 'InternalServerError',
+      message: statusCode === 500 ? 'An unexpected error occurred' : error?.message,
       details: {},
     });
   });
