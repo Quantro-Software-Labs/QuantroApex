@@ -56,6 +56,7 @@ Start the local PostgreSQL container:
 ```bash
 docker-compose up -d
 ```
+*Note: If PostgreSQL is already running natively on port 5433 on your system, port binding may report `address already in use`. In this case, your database is already active — you can skip this step and proceed directly to Step 2.*
 
 ### 2. API Gateway Setup
 Navigate to the API gateway and configure environment:
