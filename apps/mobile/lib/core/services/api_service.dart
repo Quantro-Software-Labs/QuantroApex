@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
@@ -18,13 +19,24 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  /// The base URL for the API.
-  /// Override via --dart-define=API_BASE_URL=https://api.example.com at build time.
-  /// Defaults to Android emulator localhost. For iOS simulator use http://localhost:3000.
-  static const String _defaultBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000', // Android emulator → host machine localhost
-  );
+  /// Computes the optimal default base URL based on runtime platform:
+  /// - Environment variable `--dart-define=API_BASE_URL=<url>` (if provided)
+  /// - Web & Desktop & iOS Simulator: http://localhost:3000
+  /// - Android Emulator: http://10.0.2.2:3000
+  static String get _computedDefaultBaseUrl {
+    const fromEnv = String.fromEnvironment('API_BASE_URL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+
+    if (kIsWeb) {
+      return 'http://localhost:3000';
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:3000';
+    }
+
+    return 'http://localhost:3000';
+  }
 
   static const Duration _requestTimeout = Duration(seconds: 15);
 
@@ -33,7 +45,7 @@ class ApiService {
 
   ApiService({http.Client? client, String? baseUrl})
       : _client = client ?? http.Client(),
-        baseUrl = baseUrl ?? _defaultBaseUrl;
+        baseUrl = baseUrl ?? _computedDefaultBaseUrl;
 
   Map<String, String> _buildHeaders([String? token]) {
     final headers = <String, String>{
@@ -73,77 +85,53 @@ class ApiService {
     );
   }
 
-  Future<dynamic> get(String path, {String? token}) async {
+  Future<dynamic> _safeExecute(Future<http.Response> Function() action) async {
     try {
-      final response = await _client
-          .get(
-            Uri.parse('$baseUrl$path'),
-            headers: _buildHeaders(token),
-          )
-          .timeout(_requestTimeout);
+      final response = await action().timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiException {
       rethrow;
-    } on SocketException {
-      throw ApiException(
-        statusCode: 0,
-        message: 'No internet connection. Please check your network.',
-      );
-    } catch (_) {
+    } on TimeoutException {
       throw ApiException(
         statusCode: 408,
-        message: 'Request timed out. Please check your connection and retry.',
+        message: 'Request timed out. Please check server connectivity and retry.',
+      );
+    } catch (e) {
+      throw ApiException(
+        statusCode: 0,
+        message:
+            'Unable to connect to server at $baseUrl. Please verify API Gateway is running.',
+        details: e.toString(),
       );
     }
+  }
+
+  Future<dynamic> get(String path, {String? token}) async {
+    return _safeExecute(
+      () => _client.get(
+        Uri.parse('$baseUrl$path'),
+        headers: _buildHeaders(token),
+      ),
+    );
   }
 
   Future<dynamic> post(String path, {dynamic body, String? token}) async {
-    try {
-      final response = await _client
-          .post(
-            Uri.parse('$baseUrl$path'),
-            headers: _buildHeaders(token),
-            body: body != null ? jsonEncode(body) : null,
-          )
-          .timeout(_requestTimeout);
-      return _processResponse(response);
-    } on ApiException {
-      rethrow;
-    } on SocketException {
-      throw ApiException(
-        statusCode: 0,
-        message: 'No internet connection. Please check your network.',
-      );
-    } catch (_) {
-      throw ApiException(
-        statusCode: 408,
-        message: 'Request timed out. Please check your connection and retry.',
-      );
-    }
+    return _safeExecute(
+      () => _client.post(
+        Uri.parse('$baseUrl$path'),
+        headers: _buildHeaders(token),
+        body: body != null ? jsonEncode(body) : null,
+      ),
+    );
   }
 
   Future<dynamic> put(String path, {dynamic body, String? token}) async {
-    try {
-      final response = await _client
-          .put(
-            Uri.parse('$baseUrl$path'),
-            headers: _buildHeaders(token),
-            body: body != null ? jsonEncode(body) : null,
-          )
-          .timeout(_requestTimeout);
-      return _processResponse(response);
-    } on ApiException {
-      rethrow;
-    } on SocketException {
-      throw ApiException(
-        statusCode: 0,
-        message: 'No internet connection. Please check your network.',
-      );
-    } catch (_) {
-      throw ApiException(
-        statusCode: 408,
-        message: 'Request timed out. Please check your connection and retry.',
-      );
-    }
+    return _safeExecute(
+      () => _client.put(
+        Uri.parse('$baseUrl$path'),
+        headers: _buildHeaders(token),
+        body: body != null ? jsonEncode(body) : null,
+      ),
+    );
   }
 }
