@@ -47,9 +47,13 @@ QuantroApex/
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-- **Node.js**: `v22.0.0` or later
+- **Node.js**: `v20.0.0` or later
 - **Docker & Docker Compose**: For PostgreSQL database
 - **Flutter**: `v3.27.0` or later (for mobile client)
+- **Linux Desktop Build Dependencies** (Linux desktop target only):
+  ```bash
+  sudo apt-get update && sudo apt-get install -y libsecret-1-dev libjsoncpp-dev
+  ```
 
 ### 1. Database Infrastructure Setup
 Start the local PostgreSQL container:
