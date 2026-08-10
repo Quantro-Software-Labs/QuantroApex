@@ -16,7 +16,7 @@ void main() {
     );
 
     expect(find.byType(LoginScreen), findsOneWidget);
-    expect(find.text('QuantroApex'), findsOneWidget);
+    expect(find.text('QUANTRO'), findsOneWidget);
     expect(find.text('Welcome Back'), findsOneWidget);
   });
 }

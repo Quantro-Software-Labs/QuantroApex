@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
+import '../../widgets/quantro_logo.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -63,8 +64,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('QuantroApex', style: AppTypography.secondary(color: AppColors.muted)),
-                const SizedBox(height: AppSpacing.space2),
+                const Center(
+                  child: QuantroLogo(size: 56, showText: true),
+                ),
+                const SizedBox(height: AppSpacing.space4),
                 Text('Create Account', style: AppTypography.h1(color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.space2),
                 Text(

@@ -9,6 +9,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
 import '../../widgets/mode_toggle_badge.dart';
+import '../../widgets/quantro_logo.dart';
 import '../analytics/analytics_screen.dart';
 import '../execution/execution_controls_screen.dart';
 import '../notifications/advisory_feed_screen.dart';
@@ -56,12 +57,18 @@ class DashboardScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
                       children: [
-                        Text('Good day, $name', style: AppTypography.secondary(color: AppColors.muted)),
-                        const SizedBox(height: AppSpacing.space1),
-                        Text('QuantroApex', style: AppTypography.h1(color: AppColors.primary)),
+                        const QuantroLogo(size: 32, showText: false),
+                        const SizedBox(width: AppSpacing.space3),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Good day, $name', style: AppTypography.secondary(color: AppColors.muted)),
+                            const SizedBox(height: AppSpacing.space1),
+                            Text('QuantroApex', style: AppTypography.h1(color: AppColors.primary)),
+                          ],
+                        ),
                       ],
                     ),
                     const ModeToggleBadge(),

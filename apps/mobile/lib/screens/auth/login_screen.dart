@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
+import '../../widgets/quantro_logo.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -56,9 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: AppSpacing.space5),
-                Text('QuantroApex', style: AppTypography.secondary(color: AppColors.muted)),
-                const SizedBox(height: AppSpacing.space2),
+                const SizedBox(height: AppSpacing.space3),
+                const Center(
+                  child: QuantroLogo(size: 64, showText: true),
+                ),
+                const SizedBox(height: AppSpacing.space4),
                 Text('Welcome Back', style: AppTypography.h1(color: AppColors.primary)),
                 const SizedBox(height: AppSpacing.space2),
                 Text(
