@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  api-gateway:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: quantroapex
+          POSTGRES_PASSWORD: quantroapex_test
+          POSTGRES_DB: quantroapex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: services/api-gateway
+
+    env:
+      DATABASE_URL: postgresql://quantroapex:quantroapex_test@localhost:5432/quantroapex_test?schema=public
+      JWT_ACCESS_SECRET: test-access-secret-minimum-32-characters
+      JWT_REFRESH_SECRET: test-refresh-secret-minimum-32-characters
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+        working-directory: .
+
+      - run: npm run db:generate
+      - run: npx prisma migrate deploy
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

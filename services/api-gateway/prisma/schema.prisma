@@ -1,0 +1,325 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ExperienceLevel {
+  NEWCOMER
+  INTERMEDIATE
+  PROFESSIONAL
+}
+
+enum DigestInterval {
+  OFF
+  DAILY
+  WEEKLY
+}
+
+enum OnboardingPath {
+  NEWCOMER
+  EXPRESS
+}
+
+enum PortfolioMode {
+  LIVE
+  SIM
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+enum OrderStatus {
+  PENDING
+  SUBMITTED
+  FILLED
+  PARTIALLY_FILLED
+  CANCELLED
+  REJECTED
+}
+
+enum AgentPhase {
+  SEED
+  LEARNING
+  ADAPTING
+  AUTONOMOUS
+}
+
+enum AssetClass {
+  CRYPTO
+  STOCKS
+  FOREX
+}
+
+enum RiskLevel {
+  CONSERVATIVE
+  GROWTH
+  AGGRESSIVE
+  EXPERIMENTAL
+}
+
+enum ActivityEventType {
+  TRADE_OPENED
+  TRADE_CLOSED
+  POSITION_ADJUSTED
+  TRADING_PAUSED
+  TRADING_RESUMED
+  STRATEGY_CHANGED
+  RISK_LIMIT_HIT
+  EMERGENCY_STOP
+  AGENT_PHASE_CHANGED
+  SYSTEM
+}
+
+model User {
+  id                    String          @id @default(cuid())
+  email                 String          @unique
+  passwordHash          String          @map("password_hash")
+  firstName             String?         @map("first_name")
+  lastName              String?         @map("last_name")
+  experienceLevel       ExperienceLevel @default(NEWCOMER) @map("experience_level")
+  onboardingCompletedAt DateTime?       @map("onboarding_completed_at")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+
+  profile            UserProfile?
+  riskVault          RiskVault?
+  onboardingProgress OnboardingProgress?
+  refreshTokens      RefreshToken[]
+  userStrategies     UserStrategy[]
+  portfolios         Portfolio[]
+  orders             Order[]
+  activityFeed       ActivityFeedEntry[]
+  agentState         AgentState?
+  notificationPrefs  NotificationPreferences?
+
+  @@map("users")
+}
+
+model UserProfile {
+  id                    String   @id @default(cuid())
+  userId                String   @unique @map("user_id")
+  riskProfile           Json?    @map("risk_profile")
+  tradingCapital        Decimal? @map("trading_capital") @db.Decimal(18, 2)
+  preferredTradingMode  PortfolioMode @default(SIM) @map("preferred_trading_mode")
+  globalBrainConsent    Boolean  @default(false) @map("global_brain_consent")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model OnboardingProgress {
+  id           String         @id @default(cuid())
+  userId       String         @unique @map("user_id")
+  path         OnboardingPath @default(NEWCOMER)
+  currentStep  Int            @default(1) @map("current_step")
+  state        Json           @default("{}")
+  completedAt  DateTime?      @map("completed_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_progress")
+}
+
+model RiskVault {
+  id                 String    @id @default(cuid())
+  userId             String    @unique @map("user_id")
+  dailyLossLimit     Decimal   @map("daily_loss_limit") @db.Decimal(18, 2)
+  maxDrawdown        Decimal   @map("max_drawdown") @db.Decimal(5, 4)
+  perTradeExposure   Decimal   @map("per_trade_exposure") @db.Decimal(5, 4)
+  cryptoEnabled      Boolean   @default(false) @map("crypto_enabled")
+  stocksEnabled      Boolean   @default(true) @map("stocks_enabled")
+  forexEnabled       Boolean   @default(false) @map("forex_enabled")
+  emergencyStoppedAt DateTime? @map("emergency_stopped_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("risk_vaults")
+}
+
+model Strategy {
+  id              String      @id @default(cuid())
+  slug            String      @unique
+  name            String
+  description     String
+  assetClass      AssetClass  @map("asset_class")
+  riskLevel       RiskLevel   @map("risk_level")
+  style           String
+  rules           Json
+  backtestSummary Json        @map("backtest_summary")
+  activeUserCount Int         @default(0) @map("active_user_count")
+  isPremium       Boolean     @default(false) @map("is_premium")
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  userStrategies UserStrategy[]
+  agentStates    AgentState[]
+
+  @@map("strategies")
+}
+
+model UserStrategy {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  strategyId String   @map("strategy_id")
+  isActive   Boolean  @default(true) @map("is_active")
+  selectedAt DateTime @default(now()) @map("selected_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id])
+
+  @@unique([userId, strategyId])
+  @@index([userId])
+  @@map("user_strategies")
+}
+
+model Portfolio {
+  id          String        @id @default(cuid())
+  userId      String        @map("user_id")
+  mode        PortfolioMode
+  cashBalance Decimal       @default(0) @map("cash_balance") @db.Decimal(18, 2)
+  equity      Decimal       @default(0) @db.Decimal(18, 2)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions Position[]
+
+  @@unique([userId, mode])
+  @@map("portfolios")
+}
+
+model Position {
+  id               String   @id @default(cuid())
+  portfolioId      String   @map("portfolio_id")
+  symbol           String
+  quantity         Decimal  @db.Decimal(18, 8)
+  averageCost      Decimal  @map("average_cost") @db.Decimal(18, 4)
+  brokerPositionId String?  @map("broker_position_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, symbol])
+  @@map("positions")
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  userId        String        @map("user_id")
+  symbol        String
+  side          OrderSide
+  orderType     OrderType     @map("order_type")
+  quantity      Decimal       @db.Decimal(18, 8)
+  limitPrice    Decimal?      @map("limit_price") @db.Decimal(18, 4)
+  status        OrderStatus   @default(PENDING)
+  isSimulated   Boolean       @default(false) @map("is_simulated")
+  brokerOrderId String?       @map("broker_order_id")
+  idempotencyKey String?      @unique @map("idempotency_key")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trades Trade[]
+
+  @@index([userId, createdAt])
+  @@index([userId, status])   // For status-filtered order queries
+  @@map("orders")
+}
+
+model Trade {
+  id              String   @id @default(cuid())
+  orderId         String   @map("order_id")
+  fillPrice       Decimal  @map("fill_price") @db.Decimal(18, 4)
+  fillQuantity    Decimal  @map("fill_quantity") @db.Decimal(18, 8)
+  realizedPnl     Decimal? @map("realized_pnl") @db.Decimal(18, 2)
+  aiReasoning     String?  @map("ai_reasoning")
+  marketContext   Json?    @map("market_context")
+  filledAt        DateTime @default(now()) @map("filled_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([filledAt])         // For time-series analytics queries
+  @@map("trades")
+}
+
+model ActivityFeedEntry {
+  id        String            @id @default(cuid())
+  userId    String            @map("user_id")
+  eventType ActivityEventType @map("event_type")
+  message   String
+  metadata  Json?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, eventType]) // For eventType-filtered activity feed queries
+  @@map("activity_feed_entries")
+}
+
+model AgentState {
+  id                String     @id @default(cuid())
+  userId            String     @unique @map("user_id")
+  phase             AgentPhase @default(SEED)
+  currentStrategyId String?    @map("current_strategy_id")
+  isRunning         Boolean    @default(false) @map("is_running")
+  startedAt         DateTime?  @map("started_at")
+  stoppedAt         DateTime?  @map("stopped_at")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStrategy Strategy? @relation(fields: [currentStrategyId], references: [id])
+
+  @@map("agent_states")
+}
+
+model NotificationPreferences {
+  id                  String         @id @default(cuid())
+  userId              String         @unique @map("user_id")
+  digestInterval      DigestInterval @default(DAILY) @map("digest_interval")
+  milestoneAlerts     Boolean        @default(true) @map("milestone_alerts")
+  lossThresholdPct    Decimal?       @map("loss_threshold_pct") @db.Decimal(5, 2)
+  lossAlertsEnabled   Boolean        @default(true) @map("loss_alerts_enabled")
+  pushEnabled         Boolean        @default(true) @map("push_enabled")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}

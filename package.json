@@ -1,0 +1,25 @@
+{
+  "name": "quantroapex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QuantroApex — Autonomous AI Trading System",
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@quantroapex/api-gateway",
+    "build": "npm run build --workspace=@quantroapex/api-gateway",
+    "test": "npm run test --workspace=@quantroapex/api-gateway",
+    "db:generate": "npm run db:generate --workspace=@quantroapex/api-gateway",
+    "db:migrate": "npm run db:migrate --workspace=@quantroapex/api-gateway",
+    "db:push": "npm run db:push --workspace=@quantroapex/api-gateway",
+    "db:studio": "npm run db:studio --workspace=@quantroapex/api-gateway",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "setup": "npm install && npm run docker:up && npm run db:generate && npm run db:migrate"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
