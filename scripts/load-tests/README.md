@@ -1,7 +1,10 @@
-# QuantroApex — Load Test Suite
-> Sprint 10 · k6 · 500 concurrent users
+# QuantroApex Load Test Suite
 
-## Prerequisites
+Performance benchmarking and stress test suite using **k6** to validate high-throughput concurrency (500+ users).
+
+---
+
+## 🛠️ Prerequisites
 
 Install [k6](https://k6.io/docs/getting-started/installation/):
 
@@ -18,23 +21,25 @@ sudo apt-get update && sudo apt-get install k6
 choco install k6
 ```
 
-## Running Tests
+---
 
-### 1. Smoke test first (always run before load test)
+## 🚀 Running Tests
+
+### 1. Smoke Test (Pre-flight Sanity Check)
+
+Run before starting full load tests to confirm route availability:
 
 ```bash
 k6 run scripts/load-tests/smoke_test.js --env BASE_URL=http://localhost:3000
 ```
 
-All routes should return 200/201 for valid requests and never 500.
-
-### 2. Full load test — 500 concurrent users
+### 2. Full Load Test (500 Concurrent Users)
 
 ```bash
 k6 run scripts/load-tests/load_test.js --env BASE_URL=http://localhost:3000
 ```
 
-Or against staging:
+Against Staging environment:
 
 ```bash
 k6 run scripts/load-tests/load_test.js \
@@ -42,34 +47,31 @@ k6 run scripts/load-tests/load_test.js \
   --out json=results/load_test_$(date +%Y%m%d_%H%M%S).json
 ```
 
-## Thresholds
+---
 
-| Metric | Threshold |
-|--------|-----------|
-| `http_req_duration` p(95) | < 2,000ms |
-| `http_req_duration` p(99) | < 5,000ms |
-| `http_req_failed` | < 1% |
-| `auth_latency` p(95) | < 1,500ms |
-| `feed_latency` p(95) | < 1,000ms |
-| `execution_latency` p(95) | < 3,000ms |
-| `order_placement_success` | ≥ 99% |
-| `api_error_rate` | < 0.5% |
+## 📊 SLA Performance Thresholds
 
-## Staged Ramp Profile
+| Metric | Threshold SLA |
+|--------|---------------|
+| `http_req_duration` p(95) | `< 2,000ms` |
+| `http_req_duration` p(99) | `< 5,000ms` |
+| `http_req_failed` | `< 1%` |
+| `auth_latency` p(95) | `< 1,500ms` |
+| `feed_latency` p(95) | `< 1,000ms` |
+| `execution_latency` p(95) | `< 3,000ms` |
+| `order_placement_success` | `≥ 99%` |
+| `api_error_rate` | `< 0.5%` |
 
-| Stage | Duration | Target VUs |
-|-------|----------|-----------|
-| Warm-up | 1m | 100 |
-| Sustained | 2m | 100 |
-| Scale | 1m | 250 |
-| Sustained | 2m | 250 |
-| Peak | 1m | **500** |
-| **Stress window** | **3m** | **500** |
-| Ramp-down | 1m | 0 |
+---
 
-## Notes
+## 📈 Ramp-Up Profile
 
-- The tests use dev auth tokens (`firebase_dev:...` format) which only work when `NODE_ENV=development`
-- For staging load tests, provision dedicated test user Firebase UIDs and pass real ID tokens via `--env TOKEN=...`
-- Load tests should never run against production — use staging environment only
-- Results are not automatically stored — pipe to `--out json=results/...` for persistence
+| Stage | Duration | Target Virtual Users (VUs) |
+|-------|----------|----------------------------|
+| **Warm-up** | 1m | 100 |
+| **Sustained** | 2m | 100 |
+| **Scale** | 1m | 250 |
+| **Sustained** | 2m | 250 |
+| **Peak** | 1m | **500** |
+| **Stress Window** | **3m** | **500** |
+| **Ramp-down** | 1m | 0 |

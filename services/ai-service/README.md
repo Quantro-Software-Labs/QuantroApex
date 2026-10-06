@@ -1,40 +1,45 @@
 # QuantroApex AI Service
 
-Python FastAPI service for **Smart Money Concepts (SMC)** overlays, **TA-Lib** indicators/patterns, and **VectorBT** backtesting.
+Python FastAPI microservice for **Smart Money Concepts (SMC)** analysis, **TA-Lib** technical indicators/pattern detection, and **VectorBT** strategy backtesting.
 
 Default port: **8001**
 
-> Replaces `services/quant-engine` as the product brief AI service. Keep quant-engine only until callers are pointed here.
+---
 
-## Prerequisites
+## ⚡ Overview
 
-### System TA-Lib (recommended)
+The AI Service processes market candles to detect institutional order flow setups:
+- **Order Blocks (OB)**: Bullish & Bearish order blocks with volume confirmation.
+- **Fair Value Gaps (FVG)**: Imbalance zone detection.
+- **Break of Structure (BOS) & Change of Character (CHoCH)**: Market structure break identification.
+- **Liquidity Pools**: Buy-side and sell-side liquidity sweep zones.
+- **Premium / Discount Zones**: Equilibrium calculations based on recent swing highs and lows.
+- **TA-Lib & VectorBT**: 60+ candlestick pattern recognitions and historical vector backtests.
 
-The Python `TA-Lib` package needs the C library installed first:
+---
+
+## 🛠️ Prerequisites & Setup
+
+### 1. System TA-Lib (Recommended)
+
+The Python `TA-Lib` wrapper requires the underlying C library:
 
 ```bash
-# Debian / Ubuntu
+# Ubuntu / Debian
 sudo apt-get install -y build-essential wget
 wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
 tar -xzf ta-lib-0.4.0-src.tar.gz
 cd ta-lib/
 ./configure --prefix=/usr
-make
-sudo make install
+make && sudo make install
 
 # macOS
 brew install ta-lib
 ```
 
-If the C library is missing, the service still starts in **degraded mode** (pandas RSI/MACD/EMA + simple pattern stubs). Responses label the mode so clients can warn users.
+*Note: If system TA-Lib is not installed, the AI Service operates in **Degraded Mode** using pandas-based indicator fallbacks.*
 
-`requirements.txt` does **not** hard-require `TA-Lib` or `vectorbt` — install them separately when the environment supports them:
-
-```bash
-pip install TA-Lib vectorbt 'plotly>=5.18.0,<6'
-```
-
-## Setup
+### 2. Environment Setup
 
 ```bash
 cd services/ai-service
@@ -43,95 +48,53 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Market data
-
-Set Alpaca keys to pull live bars; otherwise analysis uses deterministic synthetic OHLCV:
-
+Optionally install advanced packages when environment permits:
 ```bash
-export ALPACA_API_KEY=...
-export ALPACA_SECRET_KEY=...
-# optional: ALPACA_DATA_URL=https://data.alpaca.markets/v2
+pip install TA-Lib vectorbt 'plotly>=5.18.0,<6'
 ```
 
-## Run
+### 3. Market Data Credentials (Optional)
 
+Configure Alpaca credentials for direct live candle streaming:
 ```bash
-cd services/ai-service
-source .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+export ALPACA_API_KEY="your-key"
+export ALPACA_SECRET_KEY="your-secret"
 ```
 
-From the monorepo root:
+---
 
-```bash
-npm run ai:dev
-```
+## 🚀 Running the Service
 
-Open docs: http://localhost:8001/docs
+- **Standalone via uvicorn**:
+  ```bash
+  cd services/ai-service
+  source .venv/bin/activate
+  uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+  ```
+- **Monorepo command**:
+  ```bash
+  npm run ai:dev
+  ```
 
-## Endpoints
+Interactive OpenAPI documentation: [http://localhost:8001/docs](http://localhost:8001/docs)
+
+---
+
+## 📌 API Endpoints Reference
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/health` | Liveness + TA-Lib / VectorBT availability |
-| `GET` | `/analysis/{asset_class}/{symbol}/{timeframe}` | SMC overlays + RSI/MACD/EMA |
-| `POST` | `/backtest` | VectorBT (or fallback) strategy backtest |
-| `GET` | `/patterns/list` | Available CDL* pattern names |
-| `POST` | `/patterns/detect` | Detect patterns on OHLCV candles |
+| `GET` | `/health` | Liveness check & TA-Lib / VectorBT feature flags |
+| `GET` | `/analysis/{asset_class}/{symbol}/{timeframe}` | SMC overlays + RSI / MACD / EMA calculations |
+| `POST` | `/backtest` | VectorBT strategy backtest engine |
+| `GET` | `/patterns/list` | Available TA-Lib pattern identifiers |
+| `POST` | `/patterns/detect` | Detect candlestick patterns on custom OHLCV data |
 
-`POST /backtest/run` is retained as an alias for the api-gateway proxy.
+---
 
-### Analysis (SMC + indicators)
-
-```bash
-curl -s http://localhost:8001/analysis/crypto/BTCUSDT/1h
-```
-
-Returns structure (BOS/CHoCH), order blocks, FVG, liquidity pools, premium/discount zones, and indicators (`RSI`, `MACD`, `EMA20/50/200`). Candles come from **Alpaca** when keys are set, then the API gateway (`GATEWAY_URL`) if reachable; otherwise deterministic synthetic OHLCV is used.
-
-### Detect patterns
+## 🧪 Testing
 
 ```bash
-curl -s http://localhost:8001/patterns/detect \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "candles": [
-      {"open": 10, "high": 11, "low": 9.5, "close": 10.2},
-      {"open": 10.2, "high": 10.3, "low": 9.8, "close": 9.9},
-      {"open": 9.9, "high": 11.5, "low": 9.8, "close": 11.2}
-    ],
-    "patterns": ["CDLENGULFING", "CDLDOJI"]
-  }'
+cd services/ai-service
+pytest
 ```
-
-### Run backtest
-
-```bash
-curl -s http://localhost:8001/backtest \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "candles": [
-      {"open": 100, "high": 101, "low": 99, "close": 100.5, "timestamp": "2024-01-01"},
-      {"open": 100.5, "high": 102, "low": 100, "close": 101.5, "timestamp": "2024-01-02"}
-    ],
-    "strategy": {"type": "sma_crossover", "params": {"fast": 5, "slow": 20}},
-    "initial_cash": 10000
-  }'
-```
-
-Strategy types: `sma_crossover`, `rsi`, `buy_hold`.
-
-## SMC engine
-
-`app/analysis/smc_engine.py` exposes:
-
-- `detect_structure`
-- `detect_order_blocks`
-- `detect_fvg`
-- `detect_liquidity`
-- `detect_pd_zones`
-- `compute_indicators`
-
-## CORS
-
-CORS is open (`allow_origins=["*"]`) for local development.
