@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('QuantroApex V1 — End-to-End User Journey Test', () => {
   let app: FastifyInstance;
   const testEmail = `e2e_trader_${Date.now()}@quantroapex.test`;
-  const password = 'QuietConfidence2026!';
   let accessToken: string;
   let userId: string;
   let strategyId: string;
@@ -23,27 +23,15 @@ describe('QuantroApex V1 — End-to-End User Journey Test', () => {
     }
   });
 
-  it('Step 1: User Registration & Token Issuance', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: testEmail,
-        password,
-        firstName: 'Apex',
-        lastName: 'Trader',
-      },
-    });
+  it('Step 1: Firebase Session Bootstrap', async () => {
+    const session = await registerTestUser(app, testEmail);
 
-    expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.payload);
-    expect(body.user).toHaveProperty('id');
-    expect(body.user.email).toBe(testEmail.toLowerCase());
-    expect(body).toHaveProperty('accessToken');
-    expect(body).toHaveProperty('refreshToken');
+    expect(session.user).toHaveProperty('id');
+    expect(session.user.email).toBe(testEmail.toLowerCase());
+    expect(session.accessToken).toBeTruthy();
 
-    accessToken = body.accessToken;
-    userId = body.user.id;
+    accessToken = session.accessToken;
+    userId = session.user.id;
   });
 
   it('Step 2: Onboarding Flow (Path Selection & Completion)', async () => {

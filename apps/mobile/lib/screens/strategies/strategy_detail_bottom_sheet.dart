@@ -23,8 +23,9 @@ class StrategyDetailBottomSheet extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.space4),
       decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFF0F172A),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: Color(0xFF1E293B))),
       ),
       child: SafeArea(
         child: SingleChildScrollView(
@@ -37,7 +38,7 @@ class StrategyDetailBottomSheet extends StatelessWidget {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.border,
+                    color: const Color(0xFF334155),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -47,24 +48,24 @@ class StrategyDetailBottomSheet extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  StatusBadge(label: strategy.assetClass, color: AppColors.accentMid),
-                  StatusBadge(label: strategy.riskLevel, color: AppColors.muted),
+                  StatusBadge(label: strategy.assetClass, color: const Color(0xFF2563EB)),
+                  StatusBadge(label: strategy.riskLevel, color: const Color(0xFF64748B)),
                 ],
               ),
               const SizedBox(height: AppSpacing.space3),
 
-              Text(strategy.name, style: AppTypography.h1(color: AppColors.primary)),
+              Text(strategy.name, style: AppTypography.h1(color: AppColors.white)),
               const SizedBox(height: AppSpacing.space1),
               Text(
                 '${strategy.activeUserCount} active traders currently running this strategy',
-                style: AppTypography.caption(color: AppColors.muted),
+                style: AppTypography.caption(color: const Color(0xFF64748B)),
               ),
               const SizedBox(height: AppSpacing.space4),
 
-              Text(strategy.description, style: AppTypography.body(color: AppColors.primary)),
+              Text(strategy.description, style: AppTypography.body(color: AppColors.white)),
               const SizedBox(height: AppSpacing.space4),
 
-              Text('Historical Performance', style: AppTypography.h3(color: AppColors.primary)),
+              Text('Historical Performance', style: AppTypography.h3(color: AppColors.white)),
               const SizedBox(height: AppSpacing.space2),
               Row(
                 children: [
@@ -72,21 +73,21 @@ class StrategyDetailBottomSheet extends StatelessWidget {
                     child: MetricTile(
                       label: 'Win Rate',
                       value: '${(bt.winRate * 100).toStringAsFixed(0)}%',
-                      valueColor: AppColors.success,
+                      valueColor: const Color(0xFF10B981),
                     ),
                   ),
                   Expanded(
                     child: MetricTile(
                       label: 'Annual Return',
                       value: '${(bt.annualizedReturn * 100).toStringAsFixed(1)}%',
-                      valueColor: AppColors.primary,
+                      valueColor: AppColors.white,
                     ),
                   ),
                   Expanded(
                     child: MetricTile(
                       label: 'Sharpe Ratio',
                       value: bt.sharpeRatio.toStringAsFixed(2),
-                      valueColor: AppColors.primary,
+                      valueColor: AppColors.white,
                     ),
                   ),
                 ],
@@ -97,16 +98,16 @@ class StrategyDetailBottomSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Execution Rules', style: AppTypography.h3(color: AppColors.primary)),
+                    Text('Execution Rules', style: AppTypography.h3(color: AppColors.white)),
                     const SizedBox(height: AppSpacing.space2),
                     Text(
                       'Entry: ${strategy.rules['entryCondition'] ?? 'Pattern recognition'}',
-                      style: AppTypography.secondary(color: AppColors.muted),
+                      style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
                     ),
                     const SizedBox(height: AppSpacing.space1),
                     Text(
                       'Exit: ${strategy.rules['exitCondition'] ?? 'Trailing stop limit'}',
-                      style: AppTypography.secondary(color: AppColors.muted),
+                      style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
                     ),
                   ],
                 ),
@@ -121,7 +122,10 @@ class StrategyDetailBottomSheet extends StatelessWidget {
                   if (success && context.mounted) {
                     Navigator.of(context).pop();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Activated strategy: ${strategy.name}')),
+                      SnackBar(
+                        content: Text('Activated strategy: ${strategy.name}'),
+                        backgroundColor: const Color(0xFF10B981),
+                      ),
                     );
                   }
                 },

@@ -15,9 +15,7 @@ class SimulationProvider extends ChangeNotifier {
   String? _errorMessage;
 
   SimulationProvider({SimulationService? service})
-      : _service = service ?? SimulationService() {
-    fetchSimulationSummary();
-  }
+      : _service = service ?? SimulationService();
 
   String get activeMode => _activeMode;
   double get cashBalance => _cashBalance;
@@ -28,10 +26,12 @@ class SimulationProvider extends ChangeNotifier {
   bool get isResetting => _isResetting;
   String? get errorMessage => _errorMessage;
 
-  Future<void> fetchSimulationSummary() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
+  Future<void> fetchSimulationSummary({bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+    }
 
     try {
       final summary = await _service.getSummary();
@@ -41,9 +41,9 @@ class SimulationProvider extends ChangeNotifier {
       _realizedPnl = summary.realizedPnl;
       _positionsCount = summary.positionsCount;
     } catch (e) {
-      _errorMessage = 'Failed to load simulation summary.';
+      if (!silent) _errorMessage = 'Failed to load simulation summary.';
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }
@@ -58,13 +58,13 @@ class SimulationProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> resetSimulation() async {
+  Future<bool> resetSimulation({double? startingCapital}) async {
     _isResetting = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      await _service.resetSimulation();
+      await _service.resetSimulation(startingCapital: startingCapital);
       await fetchSimulationSummary();
       _isResetting = false;
       notifyListeners();

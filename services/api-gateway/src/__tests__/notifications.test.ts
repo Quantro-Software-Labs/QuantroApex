@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Notifications & Advisory Mode Endpoints', () => {
   let app: FastifyInstance;
@@ -17,17 +18,8 @@ describe('Notifications & Advisory Mode Endpoints', () => {
       where: { email: { endsWith: '@notificationtest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'trader@notificationtest.com',
-        password: 'Password123!',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
+    const session = await registerTestUser(app, 'trader@notificationtest.com');
+    accessToken = session.accessToken;
   });
 
   it('should fetch and update notification preferences', async () => {

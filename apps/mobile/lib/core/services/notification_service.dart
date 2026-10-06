@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
 
@@ -59,6 +60,13 @@ class AdvisorySignalData {
   }
 }
 
+/// Top-level background message handler — must be a free function (not a closure).
+@pragma('vm:entry-point')
+Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
+  // Firebase is already initialized by the time this runs.
+  // Logging is the only safe operation here; no UI access.
+}
+
 class NotificationService {
   final ApiService _apiService;
   final AuthService _authService;
@@ -68,6 +76,66 @@ class NotificationService {
     AuthService? authService,
   })  : _apiService = apiService ?? ApiService(),
         _authService = authService ?? AuthService();
+
+  /// Call once after Firebase.initializeApp() in main().
+  /// Requests permission, gets the device FCM token, registers it with the
+  /// server, and wires foreground + background message handlers.
+  Future<void> initializePushNotifications() async {
+    final messaging = FirebaseMessaging.instance;
+
+    // Register background handler before requesting permission.
+    FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
+
+    // Request permission (iOS / macOS prompt; Android 13+ prompt).
+    final settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+
+    // Fetch and register FCM token.
+    final token = await messaging.getToken();
+    if (token != null) {
+      await registerFcmToken(token);
+    }
+
+    // Refresh token whenever FCM rotates it.
+    messaging.onTokenRefresh.listen((newToken) async {
+      await registerFcmToken(newToken);
+    });
+
+    // Foreground messages: show an in-app banner (or delegate to NotificationProvider).
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      // Handled by NotificationProvider listener — see onMessageStream getter.
+    });
+  }
+
+  /// Expose the foreground message stream so NotificationProvider can subscribe.
+  Stream<RemoteMessage> get onMessageStream => FirebaseMessaging.onMessage;
+
+  /// Message that opened the app from background/terminated state.
+  Future<RemoteMessage?> getInitialMessage() =>
+      FirebaseMessaging.instance.getInitialMessage();
+
+  /// Stream for messages that brought the app to the foreground.
+  Stream<RemoteMessage> get onMessageOpenedApp =>
+      FirebaseMessaging.onMessageOpenedApp;
+
+  Future<void> registerFcmToken(String fcmToken) async {
+    try {
+      final token = await _authService.getAccessToken();
+      await _apiService.post(
+        '/notifications/fcm-token',
+        token: token,
+        body: {'fcmToken': fcmToken},
+      );
+    } catch (_) {
+      // Token registration is best-effort; do not crash the app.
+    }
+  }
 
   Future<NotificationPreferencesData> getPreferences() async {
     final token = await _authService.getAccessToken();
@@ -95,15 +163,6 @@ class NotificationService {
     );
     final json = (response as Map<String, dynamic>)['preferences'] as Map<String, dynamic>;
     return NotificationPreferencesData.fromJson(json);
-  }
-
-  Future<void> registerFcmToken(String fcmToken) async {
-    final token = await _authService.getAccessToken();
-    await _apiService.post(
-      '/notifications/fcm-token',
-      token: token,
-      body: {'fcmToken': fcmToken},
-    );
   }
 
   Future<List<AdvisorySignalData>> getAdvisoryFeed() async {

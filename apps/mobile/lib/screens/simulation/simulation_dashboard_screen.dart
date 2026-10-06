@@ -5,45 +5,12 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
+import '../../widgets/demo_capital_dialog.dart';
 import '../../widgets/mode_toggle_badge.dart';
+import '../../widgets/calm_feedback.dart';
 
 class SimulationDashboardScreen extends StatelessWidget {
   const SimulationDashboardScreen({super.key});
-
-  void _showResetDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AppColors.white,
-          title: Text('Reset Paper Account?', style: AppTypography.h2(color: AppColors.primary)),
-          content: Text(
-            'This will clear all simulated positions, cancel paper orders, and restore your balance to \$100,000.00.',
-            style: AppTypography.body(color: AppColors.primary),
-          ),
-          actions: [
-            GhostButton(
-              label: 'Cancel',
-              onPressed: () => Navigator.of(dialogContext).pop(),
-            ),
-            PrimaryButton(
-              label: 'Reset Account',
-              onPressed: () async {
-                Navigator.of(dialogContext).pop();
-                final provider = context.read<SimulationProvider>();
-                final success = await provider.resetSimulation();
-                if (success && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Paper trading account reset to \$100,000.00.')),
-                  );
-                }
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,12 +96,11 @@ class SimulationDashboardScreen extends StatelessWidget {
                           if (res != null && context.mounted) {
                             final tick = res['tick'] as Map<String, dynamic>;
                             final executed = res['tradeExecuted'] as bool;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Generated ${tick['symbol']} tick @ \$${tick['price']}${executed ? ' · Trade Executed!' : ''}',
-                                ),
-                              ),
+                            showCalmSnackBar(
+                              context,
+                              executed
+                                  ? 'Simulated ${tick['symbol']} at \$${tick['price']} — a trade filled.'
+                                  : 'Simulated ${tick['symbol']} at \$${tick['price']}.',
                             );
                           }
                         },
@@ -150,17 +116,17 @@ class SimulationDashboardScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Reset Paper Capital', style: AppTypography.h3(color: AppColors.primary)),
+                      Text('Configure Demo Capital', style: AppTypography.h3(color: AppColors.primary)),
                       const SizedBox(height: AppSpacing.space1),
                       Text(
-                        'Wipe all paper trades, open positions, and restore starting balance to \$100,000.00.',
+                        'Choose a preset amount (\$5k, \$10k, \$25k, \$50k, \$100k) or enter a custom demo starting balance.',
                         style: AppTypography.secondary(color: AppColors.muted),
                       ),
                       const SizedBox(height: AppSpacing.space4),
                       PrimaryButton(
-                        label: 'Reset Paper Account (\$100,000)',
+                        label: 'Set Custom / Preset Demo Capital',
                         isLoading: provider.isResetting,
-                        onPressed: () => _showResetDialog(context),
+                        onPressed: () => DemoCapitalDialog.show(context),
                       ),
                     ],
                   ),

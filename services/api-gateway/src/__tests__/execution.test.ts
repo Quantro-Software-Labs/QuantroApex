@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Execution Engine & Broker Integration', () => {
   let app: FastifyInstance;
@@ -18,18 +19,9 @@ describe('Execution Engine & Broker Integration', () => {
       where: { email: { endsWith: '@executiontest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'trader@executiontest.com',
-        password: 'Password123!',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
-    userId = body.user.id;
+    const session = await registerTestUser(app, 'trader@executiontest.com');
+    accessToken = session.accessToken;
+    userId = session.user.id;
   });
 
   it('should execute a valid BUY order and update portfolio & positions', async () => {

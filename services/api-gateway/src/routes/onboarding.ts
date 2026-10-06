@@ -1,6 +1,19 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
+import {
+  findUserBundle,
+  updateUser,
+  upsertOnboardingProgress,
+  findOnboardingProgress,
+  upsertUserProfile,
+  upsertRiskVault,
+  upsertNotificationPrefs,
+  findStrategyByIdOrSlug,
+  findFirstStrategy,
+  upsertUserStrategy,
+  upsertAgentState,
+} from '../lib/db/repos.js';
+import type { DigestInterval } from '../lib/db/types.js';
 import { getUserId } from '../plugins/auth.js';
 
 const pathSchema = z.object({
@@ -25,8 +38,8 @@ const completeSchema = z.object({
   strategyId: z.string().optional(),
   riskVault: z.object({
     dailyLossLimit: z.number().positive(),
-    maxDrawdown: z.number().min(0.01).max(1.0),
-    perTradeExposure: z.number().min(0.01).max(1.0),
+    maxDrawdown: z.number().min(0.01).max(100.0),
+    perTradeExposure: z.number().min(0.01).max(100.0),
     cryptoEnabled: z.boolean().default(false),
     stocksEnabled: z.boolean().default(true),
     forexEnabled: z.boolean().default(false),
@@ -46,15 +59,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
 
   app.get('/progress', async (request, reply) => {
     const userId = getUserId(request);
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        profile: true,
-        onboardingProgress: true,
-        riskVault: true,
-        notificationPrefs: true,
-      },
-    });
+    const user = await findUserBundle(userId);
 
     if (!user) {
       return reply.status(404).send({ error: 'NotFound', message: 'User not found' });
@@ -79,26 +84,13 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const userId = getUserId(request);
     const { path, experienceLevel } = parsed.data;
 
-    const [updatedUser, progress] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id: userId },
-        data: {
-          experienceLevel: experienceLevel ?? (path === 'EXPRESS' ? 'PROFESSIONAL' : 'NEWCOMER'),
-        },
-      }),
-      prisma.onboardingProgress.upsert({
-        where: { userId },
-        create: {
-          userId,
-          path,
-          currentStep: 1,
-        },
-        update: {
-          path,
-          currentStep: 1,
-        },
-      }),
-    ]);
+    const updatedUser = await updateUser(userId, {
+      experienceLevel: experienceLevel ?? (path === 'EXPRESS' ? 'PROFESSIONAL' : 'NEWCOMER'),
+    });
+    const progress = await upsertOnboardingProgress(userId, {
+      path,
+      currentStep: 1,
+    });
 
     return reply.send({
       experienceLevel: updatedUser.experienceLevel,
@@ -115,23 +107,15 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const userId = getUserId(request);
     const { currentStep, state } = parsed.data;
 
-    const existingProgress = await prisma.onboardingProgress.findUnique({ where: { userId } });
+    const existingProgress = await findOnboardingProgress(userId);
     const mergedState = {
       ...((existingProgress?.state as object) ?? {}),
       ...(state ?? {}),
     };
 
-    const progress = await prisma.onboardingProgress.upsert({
-      where: { userId },
-      create: {
-        userId,
-        currentStep,
-        state: mergedState,
-      },
-      update: {
-        currentStep,
-        state: mergedState,
-      },
+    const progress = await upsertOnboardingProgress(userId, {
+      currentStep,
+      state: mergedState,
     });
 
     return reply.send({ progress });
@@ -147,104 +131,114 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const data = parsed.data;
     const now = new Date();
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Update User
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          experienceLevel: data.experienceLevel,
-          onboardingCompletedAt: now,
-        },
-      });
+    const maxDrawdown = data.riskVault.maxDrawdown > 1.0
+      ? data.riskVault.maxDrawdown / 100.0
+      : data.riskVault.maxDrawdown;
 
-      // 2. Upsert Profile
-      await tx.userProfile.upsert({
-        where: { userId },
-        create: {
-          userId,
-          riskProfile: data.riskProfile ?? {},
-          tradingCapital: data.tradingCapital,
-          preferredTradingMode: data.preferredTradingMode,
-          globalBrainConsent: data.globalBrainConsent,
-        },
-        update: {
-          riskProfile: data.riskProfile ?? {},
-          tradingCapital: data.tradingCapital,
-          preferredTradingMode: data.preferredTradingMode,
-          globalBrainConsent: data.globalBrainConsent,
-        },
-      });
+    const perTradeExposure = data.riskVault.perTradeExposure > 1.0
+      ? data.riskVault.perTradeExposure / 100.0
+      : data.riskVault.perTradeExposure;
 
-      // 3. Upsert Risk Vault
-      await tx.riskVault.upsert({
-        where: { userId },
-        create: {
-          userId,
-          dailyLossLimit: data.riskVault.dailyLossLimit,
-          maxDrawdown: data.riskVault.maxDrawdown,
-          perTradeExposure: data.riskVault.perTradeExposure,
-          cryptoEnabled: data.riskVault.cryptoEnabled,
-          stocksEnabled: data.riskVault.stocksEnabled,
-          forexEnabled: data.riskVault.forexEnabled,
-        },
-        update: {
-          dailyLossLimit: data.riskVault.dailyLossLimit,
-          maxDrawdown: data.riskVault.maxDrawdown,
-          perTradeExposure: data.riskVault.perTradeExposure,
-          cryptoEnabled: data.riskVault.cryptoEnabled,
-          stocksEnabled: data.riskVault.stocksEnabled,
-          forexEnabled: data.riskVault.forexEnabled,
-        },
-      });
-
-      // 4. Upsert Notification Preferences
-      if (data.notificationPrefs) {
-        const rawInterval = (data.notificationPrefs.digestInterval || 'DAILY').toUpperCase();
-        const digestInterval = (['OFF', 'DAILY', 'WEEKLY'].includes(rawInterval) ? rawInterval : 'DAILY') as any;
-
-        await tx.notificationPreferences.upsert({
-          where: { userId },
-          create: {
-            userId,
-            digestInterval,
-            milestoneAlerts: data.notificationPrefs.milestoneAlerts,
-            lossThresholdPct: data.notificationPrefs.lossThresholdPct,
-            lossAlertsEnabled: data.notificationPrefs.lossAlertsEnabled,
-            pushEnabled: data.notificationPrefs.pushEnabled,
-          },
-          update: {
-            digestInterval,
-            milestoneAlerts: data.notificationPrefs.milestoneAlerts,
-            lossThresholdPct: data.notificationPrefs.lossThresholdPct,
-            lossAlertsEnabled: data.notificationPrefs.lossAlertsEnabled,
-            pushEnabled: data.notificationPrefs.pushEnabled,
-          },
-        });
-      }
-
-      // 5. Update Onboarding Progress
-      await tx.onboardingProgress.update({
-        where: { userId },
-        data: {
-          completedAt: now,
-        },
-      });
-
-      // 6. Connect Strategy if provided
-      if (data.strategyId) {
-        await tx.userStrategy.upsert({
-          where: { userId_strategyId: { userId, strategyId: data.strategyId } },
-          create: { userId, strategyId: data.strategyId, isActive: true },
-          update: { isActive: true },
-        });
-
-        await tx.agentState.upsert({
-          where: { userId },
-          create: { userId, currentStrategyId: data.strategyId, phase: 'SEED' },
-          update: { currentStrategyId: data.strategyId },
-        });
-      }
+    // 1. Update User
+    await updateUser(userId, {
+      experienceLevel: data.experienceLevel,
+      onboardingCompletedAt: now,
     });
+
+    // 2. Upsert Profile
+    await upsertUserProfile(userId, {
+      riskProfile: data.riskProfile ?? {},
+      tradingCapital: data.tradingCapital,
+      preferredTradingMode: data.preferredTradingMode,
+      globalBrainConsent: data.globalBrainConsent,
+    });
+
+    // 3. Upsert four Risk Vaults (STOCKS, CRYPTO, FOREX, GLOBAL)
+    const vaultBase = {
+      dailyLossLimit: data.riskVault.dailyLossLimit,
+      maxDrawdown,
+      perTradeExposure,
+      cryptoEnabled: data.riskVault.cryptoEnabled,
+      stocksEnabled: data.riskVault.stocksEnabled,
+      forexEnabled: data.riskVault.forexEnabled,
+    };
+    await Promise.all([
+      upsertRiskVault(userId, {
+        ...vaultBase,
+        assetClass: 'STOCKS',
+        assetsEnabled: data.riskVault.stocksEnabled,
+      }),
+      upsertRiskVault(userId, {
+        ...vaultBase,
+        assetClass: 'CRYPTO',
+        assetsEnabled: data.riskVault.cryptoEnabled,
+        dailyLossLimit: data.riskVault.dailyLossLimit,
+        maxDrawdown: Math.min(maxDrawdown * 1.25, 0.5),
+      }),
+      upsertRiskVault(userId, {
+        ...vaultBase,
+        assetClass: 'FOREX',
+        assetsEnabled: data.riskVault.forexEnabled,
+      }),
+      upsertRiskVault(userId, {
+        ...vaultBase,
+        assetClass: 'GLOBAL',
+        assetsEnabled: true,
+        dailyLossLimit: data.riskVault.dailyLossLimit * 2,
+        maxDrawdown: Math.min(maxDrawdown * 1.3, 0.5),
+        perTradeExposure: Math.min(perTradeExposure * 2, 0.25),
+      }),
+    ]);
+
+    // 4. Upsert Notification Preferences
+    if (data.notificationPrefs) {
+      const rawInterval = (data.notificationPrefs.digestInterval || 'DAILY').toUpperCase();
+      const digestInterval = (
+        ['OFF', 'DAILY', 'WEEKLY'].includes(rawInterval) ? rawInterval : 'DAILY'
+      ) as DigestInterval;
+
+      await upsertNotificationPrefs(userId, {
+        digestInterval,
+        milestoneAlerts: data.notificationPrefs.milestoneAlerts,
+        lossThresholdPct: data.notificationPrefs.lossThresholdPct,
+        lossAlertsEnabled: data.notificationPrefs.lossAlertsEnabled,
+        pushEnabled: data.notificationPrefs.pushEnabled,
+      });
+    }
+
+    // 5. Upsert Onboarding Progress
+    await upsertOnboardingProgress(userId, {
+      path: data.experienceLevel === 'PROFESSIONAL' ? 'EXPRESS' : 'NEWCOMER',
+      currentStep: 9,
+      completedAt: now,
+    });
+
+    // 6. Connect Strategy safely if provided or pick default
+    let strategyToConnect: string | null = null;
+    if (data.strategyId) {
+      let strat = await findStrategyByIdOrSlug(data.strategyId);
+      if (!strat && data.strategyId.includes('_')) {
+        strat = await findStrategyByIdOrSlug(data.strategyId.replace(/_/g, '-'));
+      }
+      if (strat) {
+        strategyToConnect = strat.id;
+      }
+    }
+
+    if (!strategyToConnect) {
+      const defaultStrat = await findFirstStrategy({});
+      if (defaultStrat) {
+        strategyToConnect = defaultStrat.id;
+      }
+    }
+
+    if (strategyToConnect) {
+      await upsertUserStrategy(userId, strategyToConnect);
+      await upsertAgentState(userId, {
+        currentStrategyId: strategyToConnect,
+        phase: 'SEED',
+      });
+    }
 
     return reply.send({
       message: 'Onboarding completed successfully',

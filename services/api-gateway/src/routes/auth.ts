@@ -1,201 +1,44 @@
+/**
+ * Auth routes — Firebase owns credentials; API only exposes profile sync.
+ */
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import {
-  generateRefreshToken,
-  getRefreshTokenExpiry,
-  hashPassword,
-  hashToken,
-  verifyPassword,
-} from '../lib/auth.js';
-import { getUserId } from '../plugins/auth.js';
+import { getUserId } from '../plugins/firebase_auth.js';
+import { posthog } from '../lib/analytics/posthog_client.js';
+import { sendWelcomeEmail } from '../lib/email/resend_client.js';
 
-const registerSchema = z.object({
-  email: z.string().email().max(254),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(128, 'Password must not exceed 128 characters'),
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
-});
-
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1).max(256),
-});
-
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
-});
-
-async function issueTokens(
-  app: FastifyInstance,
-  userId: string,
-  email: string,
-) {
-  const accessToken = app.jwt.sign({ sub: userId, email });
-  const refreshToken = generateRefreshToken();
-
-  await prisma.refreshToken.create({
-    data: {
-      userId,
-      tokenHash: hashToken(refreshToken),
-      expiresAt: getRefreshTokenExpiry(),
-    },
-  });
-
-  return { accessToken, refreshToken };
-}
-
-// Consistent user shape — never include passwordHash
 function safeUser(user: {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
+  name: string;
   firstName: string | null;
   lastName: string | null;
   experienceLevel: string;
+  preferredMarket: string;
   onboardingCompletedAt: Date | null;
 }) {
   return {
     id: user.id,
     email: user.email,
+    phone: user.phone,
+    name: user.name,
     firstName: user.firstName,
     lastName: user.lastName,
     experienceLevel: user.experienceLevel,
+    preferredMarket: user.preferredMarket,
     onboardingCompletedAt: user.onboardingCompletedAt,
   };
 }
 
 export async function authRoutes(app: FastifyInstance) {
-  // Per-route stricter rate limits on auth endpoints
-  app.post(
-    '/register',
-    { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } },
-    async (request, reply) => {
-      const parsed = registerSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({
-          error: 'ValidationError',
-          message: 'Invalid registration data',
-          details: parsed.error.flatten(),
-        });
-      }
-
-      const { email, password, firstName, lastName } = parsed.data;
-      const normalizedEmail = email.toLowerCase().trim();
-
-      const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-      if (existing) {
-        return reply.status(409).send({
-          error: 'Conflict',
-          message: 'Email already registered',
-          details: {},
-        });
-      }
-
-      const passwordHash = await hashPassword(password);
-
-      const user = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          firstName,
-          lastName,
-          profile: { create: {} },
-          onboardingProgress: { create: { path: 'NEWCOMER', currentStep: 1 } },
-          agentState: { create: {} },
-          notificationPrefs: { create: {} },
-          portfolios: {
-            create: [
-              { mode: 'LIVE', cashBalance: 0, equity: 0 },
-              { mode: 'SIM', cashBalance: 100000, equity: 100000 },
-            ],
-          },
-        },
-      });
-
-      const tokens = await issueTokens(app, user.id, user.email);
-
-      return reply.status(201).send({
-        user: safeUser(user),
-        ...tokens,
-      });
-    },
-  );
-
-  app.post(
-    '/login',
-    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
-    async (request, reply) => {
-      const parsed = loginSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({
-          error: 'ValidationError',
-          message: 'Invalid login credentials format',
-          details: parsed.error.flatten(),
-        });
-      }
-
-      const { email, password } = parsed.data;
-      const normalizedEmail = email.toLowerCase().trim();
-      const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-
-      // Constant-time-safe: always check password even if user is not found
-      if (!user || !(await verifyPassword(password, user.passwordHash))) {
-        return reply.status(401).send({
-          error: 'Unauthorized',
-          message: 'Invalid email or password',
-          details: {},
-        });
-      }
-
-      const tokens = await issueTokens(app, user.id, user.email);
-
-      return reply.send({
-        user: safeUser(user),
-        ...tokens,
-      });
-    },
-  );
-
-  app.post('/refresh', async (request, reply) => {
-    const parsed = refreshSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({
-        error: 'ValidationError',
-        message: 'Invalid refresh token format',
-        details: parsed.error.flatten(),
-      });
-    }
-
-    const tokenHash = hashToken(parsed.data.refreshToken);
-    const stored = await prisma.refreshToken.findUnique({
-      where: { tokenHash },
-      include: { user: true },
+  /** Soft redirect for old clients — password reset is Firebase-owned */
+  app.post('/forgot-password', async (_request, reply) => {
+    return reply.send({
+      message: 'Password reset is handled by Firebase Auth.',
+      provider: 'firebase',
     });
-
-    if (!stored || stored.expiresAt < new Date()) {
-      if (stored) {
-        await prisma.refreshToken.delete({ where: { id: stored.id } });
-      }
-      return reply.status(401).send({
-        error: 'Unauthorized',
-        message: 'Invalid or expired refresh token',
-        details: {},
-      });
-    }
-
-    await prisma.refreshToken.delete({ where: { id: stored.id } });
-    const tokens = await issueTokens(app, stored.user.id, stored.user.email);
-
-    return reply.send(tokens);
-  });
-
-  app.post('/logout', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const userId = getUserId(request);
-    await prisma.refreshToken.deleteMany({ where: { userId } });
-    return reply.send({ message: 'Logged out successfully', details: {} });
   });
 
   app.get('/me', { preHandler: [app.authenticate] }, async (request, reply) => {
@@ -208,7 +51,6 @@ export async function authRoutes(app: FastifyInstance) {
         agentState: {
           include: {
             currentStrategy: {
-              // Whitelist fields — exclude proprietary rules/backtestSummary
               select: {
                 id: true,
                 name: true,
@@ -220,11 +62,13 @@ export async function authRoutes(app: FastifyInstance) {
             },
           },
         },
+        subscription: true,
+        kycVerification: true,
       },
     });
 
     if (!user) {
-      return reply.status(404).send({ error: 'NotFound', message: 'User not found', details: {} });
+      return reply.status(404).send({ error: 'NotFound', message: 'User not found' });
     }
 
     return reply.send({
@@ -232,6 +76,78 @@ export async function authRoutes(app: FastifyInstance) {
       profile: user.profile,
       onboardingProgress: user.onboardingProgress,
       agentState: user.agentState,
+      subscription: user.subscription,
+      kycVerification: user.kycVerification,
     });
   });
+
+  app.patch('/profile', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const schema = z.object({
+      name: z.string().min(1).max(120).optional(),
+      firstName: z.string().min(1).max(100).optional(),
+      lastName: z.string().min(1).max(100).optional(),
+      preferredMarket: z.string().min(2).max(64).optional(),
+      experienceLevel: z.enum(['NEWCOMER', 'INTERMEDIATE', 'PROFESSIONAL']).optional(),
+      globalBrainConsent: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'ValidationError', details: parsed.error.flatten() });
+    }
+
+    const userId = getUserId(request);
+    const { name, firstName, lastName, preferredMarket, experienceLevel, globalBrainConsent } =
+      parsed.data;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(preferredMarket !== undefined && { preferredMarket }),
+        ...(experienceLevel !== undefined && { experienceLevel }),
+      },
+    });
+
+    if (globalBrainConsent !== undefined) {
+      await prisma.userProfile.upsert({
+        where: { userId },
+        create: { userId, globalBrainConsent },
+        update: { globalBrainConsent },
+      });
+    }
+
+    posthog.capture({
+      distinctId: userId,
+      event: 'profile_updated',
+      properties: { preferred_market: preferredMarket },
+    });
+
+    return reply.send({ message: 'Profile updated', user: safeUser(user) });
+  });
+
+  /** Alias for PATCH /users/profile per product brief */
+  app.put('/profile', { preHandler: [app.authenticate] }, async (request, reply) => {
+    return app.inject({
+      method: 'PATCH',
+      url: '/auth/profile',
+      headers: request.headers as Record<string, string>,
+      payload: request.body as object,
+    }).then((res) => reply.status(res.statusCode).send(res.json()));
+  });
+
+  app.post('/welcome-email', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const email = request.user.email;
+    if (email) {
+      await sendWelcomeEmail(email, request.user.email?.split('@')[0] || 'Trader');
+    }
+    return reply.send({ message: 'Welcome email queued' });
+  });
+
+  app.post('/logout', { preHandler: [app.authenticate] }, async (_request, reply) => {
+    return reply.send({ message: 'Signed out. Clear the Firebase session on the client.' });
+  });
 }
+
+export { getUserId };

@@ -1,9 +1,19 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
+import {
+  findUserProfile,
+  findPortfolio,
+  createPortfolio,
+  updatePortfolio,
+  deletePositionsForPortfolio,
+  deleteSimulatedOrders,
+  findActiveUserStrategy,
+  upsertAgentState,
+  createActivityEntry,
+} from '../lib/db/repos.js';
 import { getUserId } from '../plugins/auth.js';
-import { executeOrder } from '../lib/execution_engine.js';
-import { AssetClass } from '@prisma/client';
+import { executeOrder, syncUserPendingOrders } from '../lib/execution_engine.js';
+import { AlpacaClient } from '../lib/broker/alpaca_client.js';
 
 const toggleModeSchema = z.object({
   mode: z.enum(['SIM', 'LIVE']),
@@ -19,61 +29,79 @@ export async function simulationRoutes(app: FastifyInstance) {
 
   app.get('/summary', async (request, reply) => {
     const userId = getUserId(request);
+    await syncUserPendingOrders(userId);
 
-    let simPortfolio = await prisma.portfolio.findFirst({
-      where: { userId, mode: 'SIM' },
-      include: { positions: true },
-    });
+    const profile = await findUserProfile(userId);
+
+    let simPortfolio = await findPortfolio(userId, 'SIM');
 
     if (!simPortfolio) {
-      simPortfolio = await prisma.portfolio.create({
-        data: {
-          userId,
-          mode: 'SIM',
-          cashBalance: 100000,
-          equity: 100000,
-        },
-        include: { positions: true },
+      simPortfolio = await createPortfolio({
+        userId,
+        mode: 'SIM',
+        cashBalance: 100000,
+        equity: 100000,
       });
     }
 
-    const livePortfolio = await prisma.portfolio.findFirst({
-      where: { userId, mode: 'LIVE' },
-      include: { positions: true },
-    });
+    let livePortfolioData = null;
+    let isBrokerConnected = false;
 
-    const activeUserStrategy = await prisma.userStrategy.findFirst({
-      where: { userId, isActive: true },
-      include: { strategy: true },
-    });
+    if (profile?.isBrokerConnected && profile.alpacaApiKey && profile.alpacaSecretKey) {
+      try {
+        const client = new AlpacaClient({
+          apiKey: profile.alpacaApiKey,
+          apiSecret: profile.alpacaSecretKey,
+        });
+        const [account, positions] = await Promise.all([
+          client.getAccount(),
+          client.getPositions(),
+        ]);
 
-    const simCash = Number(simPortfolio.cashBalance);
+        const mappedPositions = positions.map((p, idx) => ({
+          id: `alpaca_${p.symbol}_${idx}`,
+          symbol: p.symbol,
+          quantity: p.qty,
+          averageCost: p.avgEntryPrice,
+          marketValue: p.marketValue,
+        }));
+
+        isBrokerConnected = true;
+        livePortfolioData = {
+          id: account.id,
+          cashBalance: account.cash,
+          equity: account.portfolioValue,
+          positionsCount: positions.length,
+          positions: mappedPositions,
+        };
+      } catch (err) {
+        // Fallback if Alpaca API query fails
+      }
+    }
+
+    const activeUserStrategy = await findActiveUserStrategy(userId);
+
+    const simCash = simPortfolio.cashBalance;
     let simPositionValue = 0;
-    simPortfolio.positions.forEach((pos) => {
-      simPositionValue += Number(pos.quantity) * Number(pos.averageCost);
+    (simPortfolio.positions ?? []).forEach((pos) => {
+      simPositionValue += pos.quantity * pos.averageCost;
     });
     const totalSimEquity = simCash + simPositionValue;
     const simPnl = totalSimEquity - 100000;
 
     return reply.send({
-      activeMode: 'SIM',
-      simPortfolio: {
+      activeMode: isBrokerConnected ? 'LIVE' : 'SIM',
+      simPortfolio: livePortfolioData || {
         id: simPortfolio.id,
         cashBalance: simCash,
         equity: totalSimEquity,
         realizedPnl: simPnl,
-        positionsCount: simPortfolio.positions.length,
-        positions: simPortfolio.positions,
+        positionsCount: (simPortfolio.positions ?? []).length,
+        positions: simPortfolio.positions ?? [],
       },
-      livePortfolio: livePortfolio
-        ? {
-            id: livePortfolio.id,
-            cashBalance: Number(livePortfolio.cashBalance),
-            equity: Number(livePortfolio.equity),
-            positionsCount: livePortfolio.positions.length,
-          }
-        : null,
+      livePortfolio: livePortfolioData,
       activeStrategy: activeUserStrategy?.strategy || null,
+      isBrokerConnected,
     });
   });
 
@@ -87,20 +115,12 @@ export async function simulationRoutes(app: FastifyInstance) {
     const { mode } = parsed.data;
 
     // Persist mode preference and log the switch to the activity feed
-    await prisma.$transaction([
-      prisma.agentState.upsert({
-        where: { userId },
-        create: { userId, isRunning: false },
-        update: { isRunning: false }, // Pause agent on mode switch for safety
-      }),
-      prisma.activityFeedEntry.create({
-        data: {
-          userId,
-          eventType: 'SYSTEM',
-          message: `Execution mode switched to ${mode}. Agent paused for safety — resume when ready.`,
-        },
-      }),
-    ]);
+    await upsertAgentState(userId, { isRunning: false });
+    await createActivityEntry({
+      userId,
+      eventType: 'SYSTEM',
+      message: `Execution mode switched to ${mode}. Agent paused for safety — resume when ready.`,
+    });
 
     return reply.send({
       message: `Switched active execution mode to ${mode}`,
@@ -109,38 +129,42 @@ export async function simulationRoutes(app: FastifyInstance) {
     });
   });
 
+const resetSchema = z.object({
+  startingCapital: z.number().min(100).max(10000000).optional(),
+});
+
   app.post('/reset', async (request, reply) => {
     const userId = getUserId(request);
+    const parsed = resetSchema.safeParse(request.body || {});
+    const startingCapital = (parsed.success && parsed.data.startingCapital) ? parsed.data.startingCapital : 100000;
 
-    const simPortfolio = await prisma.portfolio.findFirst({
-      where: { userId, mode: 'SIM' },
-    });
+    const simPortfolio = await findPortfolio(userId, 'SIM');
 
     if (simPortfolio) {
-      await prisma.$transaction([
-        prisma.position.deleteMany({ where: { portfolioId: simPortfolio.id } }),
-        prisma.order.deleteMany({ where: { userId, isSimulated: true } }),
-        prisma.portfolio.update({
-          where: { id: simPortfolio.id },
-          data: {
-            cashBalance: 100000,
-            equity: 100000,
-          },
-        }),
-        prisma.activityFeedEntry.create({
-          data: {
-            userId,
-            eventType: 'SYSTEM',
-            message: 'Paper trading account reset to $100,000.00 initial capital.',
-          },
-        }),
-      ]);
+      await deletePositionsForPortfolio(simPortfolio.id);
+      await deleteSimulatedOrders(userId);
+      await updatePortfolio(simPortfolio.id, {
+        cashBalance: startingCapital,
+        equity: startingCapital,
+      });
+      await createActivityEntry({
+        userId,
+        eventType: 'SYSTEM',
+        message: `Paper trading account reset to \$${startingCapital.toLocaleString('en-US', { minimumFractionDigits: 2 })} initial capital.`,
+      });
+    } else {
+      await createPortfolio({
+        userId,
+        mode: 'SIM',
+        cashBalance: startingCapital,
+        equity: startingCapital,
+      });
     }
 
     return reply.send({
-      message: 'Paper trading account reset successfully',
-      cashBalance: 100000,
-      equity: 100000,
+      message: `Paper trading account reset to \$${startingCapital.toLocaleString()} successfully`,
+      cashBalance: startingCapital,
+      equity: startingCapital,
       positions: [],
     });
   });
@@ -150,15 +174,18 @@ export async function simulationRoutes(app: FastifyInstance) {
     const userId = getUserId(request);
     const symbol = (parsed.success && parsed.data.symbol) ? parsed.data.symbol.toUpperCase() : 'AAPL';
 
-    const simPortfolio = await prisma.portfolio.findFirst({
-      where: { userId, mode: 'SIM' },
-      include: { positions: true },
-    });
+    const simPortfolio = await findPortfolio(userId, 'SIM');
 
     // Simulate price fluctuation (-2% to +3%)
     const changeFactor = 1 + (Math.random() * 0.05 - 0.02);
-    const currentPos = simPortfolio?.positions.find((p) => p.symbol === symbol);
-    const basePrice = currentPos ? Number(currentPos.averageCost) : 150.0;
+    const currentPos = simPortfolio?.positions?.find((p) => p.symbol === symbol);
+    // Prefer live quote as base when no open position
+    const { resolveQuotePrice } = await import('../lib/market/quote_engine.js');
+    const { findAsset } = await import('../lib/market/market_directory.js');
+    const live = await resolveQuotePrice(symbol);
+    const basePrice = currentPos
+      ? currentPos.averageCost
+      : live?.price || findAsset(symbol)?.price || 100.0;
     const newPrice = Number((basePrice * changeFactor).toFixed(2));
 
     // Execute simulated trade if change is positive
@@ -171,7 +198,7 @@ export async function simulationRoutes(app: FastifyInstance) {
         orderType: 'MARKET',
         quantity: 5,
         limitPrice: newPrice,
-        assetClass: AssetClass.STOCKS,
+        assetClass: 'STOCKS',
         aiReasoning: `Simulated tick breakout signal on ${symbol} @ \$${newPrice}`,
         isSimulated: true,
       });

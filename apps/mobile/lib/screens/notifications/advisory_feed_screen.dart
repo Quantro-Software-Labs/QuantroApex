@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
+import 'advisory_signal_detail_screen.dart';
 
 class AdvisoryFeedScreen extends StatelessWidget {
   const AdvisoryFeedScreen({super.key});
@@ -15,12 +16,12 @@ class AdvisoryFeedScreen extends StatelessWidget {
     final signals = provider.advisorySignals;
 
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
+        backgroundColor: AppColors.darkBackground,
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.primary),
-        title: Text('Advisory Mode Signals', style: AppTypography.h2(color: AppColors.primary)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text('Advisory Mode Signals', style: AppTypography.h2(color: Colors.white)),
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -30,11 +31,11 @@ class AdvisoryFeedScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Pending Trade Recommendations', style: AppTypography.h2(color: AppColors.primary)),
+                Text('Pending Trade Recommendations', style: AppTypography.h2(color: AppColors.white)),
                 const SizedBox(height: AppSpacing.space1),
                 Text(
                   'In Advisory Mode, Apex highlights high-conviction signals requiring your manual approval before execution.',
-                  style: AppTypography.secondary(color: AppColors.muted),
+                  style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: AppSpacing.space4),
 
@@ -42,7 +43,7 @@ class AdvisoryFeedScreen extends StatelessWidget {
                   const Center(
                     child: Padding(
                       padding: EdgeInsets.all(AppSpacing.space4),
-                      child: CircularProgressIndicator(color: AppColors.accent),
+                      child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
                     ),
                   )
                 else if (signals.isEmpty)
@@ -51,13 +52,13 @@ class AdvisoryFeedScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: AppSpacing.space4),
                       child: Column(
                         children: [
-                          const Icon(Icons.check_circle_outline, color: AppColors.success, size: 48),
+                          const Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 48),
                           const SizedBox(height: AppSpacing.space2),
-                          Text('All Signals Reviewed', style: AppTypography.h3(color: AppColors.primary)),
+                          Text('All Signals Reviewed', style: AppTypography.h3(color: AppColors.white)),
                           const SizedBox(height: AppSpacing.space1),
                           Text(
                             'No pending advisory recommendations right now.',
-                            style: AppTypography.caption(color: AppColors.muted),
+                            style: AppTypography.caption(color: const Color(0xFF64748B)),
                           ),
                         ],
                       ),
@@ -69,8 +70,17 @@ class AdvisoryFeedScreen extends StatelessWidget {
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.space4),
-                      child: ApexCard(
-                        child: Column(
+                      child: GestureDetector(
+                        onTap: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            isScrollControlled: true,
+                            builder: (context) => AdvisorySignalDetailScreen(signal: signal),
+                          );
+                        },
+                        child: ApexCard(
+                          child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
@@ -80,21 +90,22 @@ class AdvisoryFeedScreen extends StatelessWidget {
                                   children: [
                                     StatusBadge(
                                       label: signal.side,
-                                      color: isBuy ? AppColors.success : AppColors.danger,
+                                      color: isBuy ? const Color(0xFF10B981) : const Color(0xFFEF4444),
                                     ),
                                     const SizedBox(width: AppSpacing.space3),
-                                    Text(signal.symbol, style: AppTypography.h2(color: AppColors.primary)),
+                                    Text(signal.symbol, style: AppTypography.h2(color: AppColors.white)),
                                   ],
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: AppColors.accent.withValues(alpha: 0.1),
+                                    color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.4)),
                                   ),
                                   child: Text(
                                     '${(signal.confidence * 100).toStringAsFixed(0)}% Confidence',
-                                    style: AppTypography.caption(color: AppColors.accent)
+                                    style: AppTypography.caption(color: const Color(0xFF3B82F6))
                                         .copyWith(fontWeight: FontWeight.bold),
                                   ),
                                 ),
@@ -107,28 +118,30 @@ class AdvisoryFeedScreen extends StatelessWidget {
                               children: [
                                 Text(
                                   'Quantity: ${signal.quantity.toStringAsFixed(0)} shares',
-                                  style: AppTypography.body(color: AppColors.primary),
+                                  style: AppTypography.body(color: AppColors.white),
                                 ),
                                 Text(
                                   'Est. Price: \$${signal.estimatedPrice.toStringAsFixed(2)}',
-                                  style: AppTypography.body(color: AppColors.primary),
+                                  style: AppTypography.body(color: AppColors.white),
                                 ),
                               ],
                             ),
                             const SizedBox(height: AppSpacing.space3),
 
                             Container(
+                              width: double.infinity,
                               padding: const EdgeInsets.all(AppSpacing.space3),
                               decoration: BoxDecoration(
-                                color: AppColors.surface,
+                                color: const Color(0xFF060B14),
                                 borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF1E293B)),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('AI Strategy Hypothesis', style: AppTypography.caption(color: AppColors.muted)),
+                                  Text('AI Strategy Hypothesis', style: AppTypography.caption(color: const Color(0xFF64748B))),
                                   const SizedBox(height: 4),
-                                  Text(signal.reasoning, style: AppTypography.body(color: AppColors.primary)),
+                                  Text(signal.reasoning, style: AppTypography.body(color: AppColors.white).copyWith(fontSize: 13)),
                                 ],
                               ),
                             ),
@@ -152,7 +165,7 @@ class AdvisoryFeedScreen extends StatelessWidget {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
                                             content: Text('Trade approved and order executed for ${signal.symbol}!'),
-                                            backgroundColor: AppColors.success,
+                                            backgroundColor: const Color(0xFF10B981),
                                           ),
                                         );
                                       }
@@ -174,6 +187,7 @@ class AdvisoryFeedScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                    ),
                     );
                   }),
               ],

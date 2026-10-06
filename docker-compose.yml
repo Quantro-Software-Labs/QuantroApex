@@ -1,5 +1,8 @@
 services:
+  # 1. Local Postgres DB
+  #   docker compose --profile local-db up -d
   postgres:
+    profiles: ["local-db", "full"]
     image: postgres:16-alpine
     container_name: quantroapex-postgres
     restart: unless-stopped
@@ -17,14 +20,87 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: quantroapex-redis
+  # 2. Node.js API Gateway (:3000)
+  #   docker compose --profile gateway up -d
+  api-gateway:
+    profiles: ["gateway", "full"]
+    build:
+      context: .
+      dockerfile: ./services/api-gateway/Dockerfile
+    container_name: quantroapex-api-gateway
     restart: unless-stopped
     ports:
-      - "6379:6379"
-    profiles:
-      - v2
+      - "3000:3000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://quantroapex:quantroapex_dev@postgres:5432/quantroapex?schema=public
+      DIRECT_URL: postgresql://quantroapex:quantroapex_dev@postgres:5432/quantroapex?schema=public
+      AI_SERVICE_URL: http://ai-service:8001
+      DATA_PIPELINE_URL: http://data-pipeline:8002
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 3. Python AI & Strategy Engine (:8001)
+  #   docker compose --profile ai up -d
+  ai-service:
+    profiles: ["ai", "full"]
+    build:
+      context: .
+      dockerfile: ./services/ai-service/Dockerfile
+    container_name: quantroapex-ai-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file: .env
+
+  # 4. Continuous Real-Time Data Pipeline & Simulator (:8002)
+  #   docker compose --profile data-pipeline up -d
+  data-pipeline:
+    profiles: ["data-pipeline", "full"]
+    build:
+      context: .
+      dockerfile: ./services/data-pipeline/Dockerfile
+    container_name: quantroapex-data-pipeline
+    command: python main.py all
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CHECKPOINT_DIR: /app/checkpoints
+    ports:
+      - "8002:8002"
+    volumes:
+      - data_pipeline_checkpoints:/app/checkpoints
+
+  # 5. One-Shot Setup Pipeline (Data Ingestion & Training)
+  #   docker compose --profile data-setup run --rm data-pipeline-setup
+  data-pipeline-setup:
+    profiles: ["data-setup"]
+    build:
+      context: .
+      dockerfile: ./services/data-pipeline/Dockerfile
+    container_name: quantroapex-data-pipeline-setup
+    command: python main.py setup
+    env_file: .env
+    environment:
+      CHECKPOINT_DIR: /app/checkpoints
+    volumes:
+      - data_pipeline_checkpoints:/app/checkpoints
+
+  # 6. Next.js Web Desktop Application (:3001)
+  #   docker compose --profile web up -d
+  trader-web:
+    profiles: ["web", "full"]
+    build:
+      context: .
+      dockerfile: ./apps/trader-web/Dockerfile
+    container_name: quantroapex-trader-web
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000
 
 volumes:
   postgres_data:
+  data_pipeline_checkpoints:

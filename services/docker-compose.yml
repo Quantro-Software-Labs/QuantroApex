@@ -1,0 +1,51 @@
+services:
+  # Prefer Supabase hosted Postgres for development and production.
+  # Keep this container only as an optional local fallback:
+  #   docker compose --profile local-db up -d
+  postgres:
+    profiles: ["local-db"]
+    image: postgres:16-alpine
+    container_name: quantroapex-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: quantroapex
+      POSTGRES_PASSWORD: quantroapex_dev
+      POSTGRES_DB: quantroapex
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantroapex -d quantroapex"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  data-pipeline-setup:
+    profiles: ["data-setup"]
+    build: ../services/data-pipeline
+    container_name: quantroapex-data-pipeline-setup
+    command: python main.py setup
+    env_file: ../.env
+    environment:
+      CHECKPOINT_DIR: /app/checkpoints
+    volumes:
+      - data_pipeline_checkpoints:/app/checkpoints
+
+  data-pipeline:
+    profiles: ["data-pipeline"]
+    build: ../services/data-pipeline
+    container_name: quantroapex-data-pipeline
+    command: python main.py all
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      CHECKPOINT_DIR: /app/checkpoints
+    ports:
+      - "8002:8002"
+    volumes:
+      - data_pipeline_checkpoints:/app/checkpoints
+
+volumes:
+  postgres_data:
+  data_pipeline_checkpoints:

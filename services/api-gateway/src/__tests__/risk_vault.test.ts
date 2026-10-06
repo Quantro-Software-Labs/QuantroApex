@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Risk Vault Endpoints & Enforcement', () => {
   let app: FastifyInstance;
@@ -18,18 +19,9 @@ describe('Risk Vault Endpoints & Enforcement', () => {
       where: { email: { endsWith: '@risktest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'user@risktest.com',
-        password: 'Password123!',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
-    userId = body.user.id;
+    const session = await registerTestUser(app, 'user@risktest.com');
+    accessToken = session.accessToken;
+    userId = session.user.id;
   });
 
   it('should fetch default risk vault settings', async () => {
@@ -145,6 +137,26 @@ describe('Risk Vault Endpoints & Enforcement', () => {
     expect(body.code).toBe('EXPOSURE_LIMIT_EXCEEDED');
   });
 
+  it('should reject trades exceeding max drawdown limit', async () => {
+    // Default maxDrawdown is 0.15 (15%). Peak equity = 100,000, current equity = 80,000 (20% drawdown)
+    const valRes = await app.inject({
+      method: 'POST',
+      url: '/risk-vault/validate-trade',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        tradeValue: 1000,
+        assetClass: 'STOCKS',
+        portfolioEquity: 80000,
+        peakEquity: 100000,
+      },
+    });
+
+    expect(valRes.statusCode).toBe(200);
+    const body = JSON.parse(valRes.payload);
+    expect(body.allowed).toBe(false);
+    expect(body.code).toBe('DRAWDOWN_LIMIT_EXCEEDED');
+  });
+
   it('should resume trading after emergency stop', async () => {
     await app.inject({
       method: 'POST',
@@ -170,3 +182,4 @@ describe('Risk Vault Endpoints & Enforcement', () => {
     expect(getBody.isEmergencyStopped).toBe(false);
   });
 });
+

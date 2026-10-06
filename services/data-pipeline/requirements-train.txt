@@ -1,0 +1,9 @@
+# Global Brain training — CPU PyTorch (avoids multi-GB CUDA wheels)
+# Install after requirements.txt:
+#   pip install -r requirements-train.txt
+#
+# For CUDA GPUs instead:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu

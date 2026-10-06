@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Onboarding Endpoints', () => {
   let app: FastifyInstance;
@@ -18,20 +19,9 @@ describe('Onboarding Endpoints', () => {
       where: { email: { endsWith: '@onboardingtest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'user@onboardingtest.com',
-        password: 'Password123!',
-        firstName: 'Onboarding',
-        lastName: 'Tester',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
-    userId = body.user.id;
+    const session = await registerTestUser(app, 'user@onboardingtest.com');
+    accessToken = session.accessToken;
+    userId = session.user.id;
   });
 
   it('should fetch initial onboarding progress', async () => {
@@ -122,7 +112,7 @@ describe('Onboarding Endpoints', () => {
       where: { id: userId },
       include: {
         profile: true,
-        riskVault: true,
+        riskVaults: true,
         notificationPrefs: true,
         onboardingProgress: true,
       },
@@ -132,8 +122,10 @@ describe('Onboarding Endpoints', () => {
     expect(updatedUser?.experienceLevel).toBe('INTERMEDIATE');
     expect(updatedUser?.profile?.globalBrainConsent).toBe(true);
     expect(Number(updatedUser?.profile?.tradingCapital)).toBe(25000);
-    expect(Number(updatedUser?.riskVault?.dailyLossLimit)).toBe(500);
-    expect(updatedUser?.riskVault?.cryptoEnabled).toBe(true);
+    const stocksVault = updatedUser?.riskVaults?.find((v) => v.assetClass === 'STOCKS');
+    expect(Number(stocksVault?.dailyLossLimit)).toBe(500);
+    expect(stocksVault?.cryptoEnabled).toBe(true);
+    expect(updatedUser?.riskVaults?.length).toBeGreaterThanOrEqual(4);
     expect(updatedUser?.onboardingProgress?.completedAt).not.toBeNull();
   });
 });

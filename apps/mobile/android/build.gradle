@@ -13,6 +13,33 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Align Kotlin across Flutter plugins (posthog pins old KGP; webview/firebase ship 2.1 metadata).
+def flutterKotlinVersion = "2.1.0"
+subprojects { sub ->
+    sub.buildscript {
+        configurations.classpath.resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-gradle-plugin:$flutterKotlinVersion"
+            eachDependency { details ->
+                if (details.requested.group == "org.jetbrains.kotlin") {
+                    details.useVersion(flutterKotlinVersion)
+                }
+            }
+        }
+    }
+    sub.configurations.configureEach {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib:$flutterKotlinVersion"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$flutterKotlinVersion"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$flutterKotlinVersion"
+            eachDependency { details ->
+                if (details.requested.group == "org.jetbrains.kotlin") {
+                    details.useVersion(flutterKotlinVersion)
+                }
+            }
+        }
+    }
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

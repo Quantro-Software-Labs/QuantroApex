@@ -7,6 +7,7 @@ import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
 import '../../widgets/quantro_logo.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: AppColors.darkBackground,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.space4),
@@ -59,14 +60,14 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const SizedBox(height: AppSpacing.space3),
                 const Center(
-                  child: QuantroLogo(size: 64, showText: true),
+                  child: QuantroLogo(size: 56, showText: true, isDarkBackground: true),
                 ),
                 const SizedBox(height: AppSpacing.space4),
-                Text('Welcome Back', style: AppTypography.h1(color: AppColors.primary)),
+                Text('Welcome Back', style: AppTypography.h1(color: AppColors.white)),
                 const SizedBox(height: AppSpacing.space2),
                 Text(
                   'Access your autonomous AI trading system.',
-                  style: AppTypography.body(color: AppColors.muted),
+                  style: AppTypography.body(color: const Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: AppSpacing.space5),
 
@@ -99,7 +100,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: AppSpacing.space5),
+                const SizedBox(height: AppSpacing.space2),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                      );
+                    },
+                    child: const Text(
+                      'Forgot password?',
+                      style: TextStyle(color: Color(0xFF3B82F6), fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.space4),
 
                 PrimaryButton(
                   label: 'Sign In',

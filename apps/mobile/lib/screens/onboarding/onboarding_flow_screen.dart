@@ -73,20 +73,20 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final totalSteps = provider.totalSteps;
 
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
+        backgroundColor: AppColors.darkBackground,
         elevation: 0,
         leading: !_isSelectingPath && currentStep > 1
             ? IconButton(
-                icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+                icon: const Icon(Icons.arrow_back, color: AppColors.white),
                 onPressed: () => provider.previousStep(),
               )
             : null,
         title: !_isSelectingPath
             ? Text(
                 'Step $currentStep of $totalSteps',
-                style: AppTypography.secondary(color: AppColors.muted),
+                style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
               )
             : null,
         centerTitle: true,
@@ -99,8 +99,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               if (!_isSelectingPath) ...[
                 LinearProgressIndicator(
                   value: currentStep / totalSteps,
-                  backgroundColor: AppColors.surface,
-                  color: AppColors.accent,
+                  backgroundColor: const Color(0xFF1E293B),
+                  color: const Color(0xFF3B82F6),
                   minHeight: 4,
                 ),
                 const SizedBox(height: AppSpacing.space4),

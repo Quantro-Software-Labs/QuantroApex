@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Simulation Mode Endpoints', () => {
   let app: FastifyInstance;
@@ -17,17 +18,8 @@ describe('Simulation Mode Endpoints', () => {
       where: { email: { endsWith: '@simtest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'trader@simtest.com',
-        password: 'Password123!',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
+    const session = await registerTestUser(app, 'trader@simtest.com');
+    accessToken = session.accessToken;
   });
 
   it('should fetch simulation summary with default $100,000 capital', async () => {
@@ -90,6 +82,7 @@ describe('Simulation Mode Endpoints', () => {
       method: 'POST',
       url: '/simulation/reset',
       headers: { authorization: `Bearer ${accessToken}` },
+      payload: { startingCapital: 100000 },
     });
 
     expect(response.statusCode).toBe(200);

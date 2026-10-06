@@ -9,9 +9,7 @@ class RiskVaultProvider extends ChangeNotifier {
   String? _errorMessage;
 
   RiskVaultProvider({RiskVaultService? service})
-      : _service = service ?? RiskVaultService() {
-    fetchVault();
-  }
+      : _service = service ?? RiskVaultService();
 
   RiskVaultData? get vault => _vault;
   bool get isLoading => _isLoading;

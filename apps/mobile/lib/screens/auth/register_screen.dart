@@ -50,11 +50,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
+        backgroundColor: AppColors.darkBackground,
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.primary),
+        iconTheme: const IconThemeData(color: AppColors.white),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -65,14 +65,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Center(
-                  child: QuantroLogo(size: 56, showText: true),
+                  child: QuantroLogo(size: 56, showText: true, isDarkBackground: true),
                 ),
                 const SizedBox(height: AppSpacing.space4),
-                Text('Create Account', style: AppTypography.h1(color: AppColors.primary)),
+                Text('Create Account', style: AppTypography.h1(color: AppColors.white)),
                 const SizedBox(height: AppSpacing.space2),
                 Text(
                   'Set up your account to start managing your trading strategies.',
-                  style: AppTypography.body(color: AppColors.muted),
+                  style: AppTypography.body(color: const Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: AppSpacing.space4),
 

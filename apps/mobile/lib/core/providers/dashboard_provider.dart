@@ -19,9 +19,7 @@ class DashboardProvider extends ChangeNotifier {
     ActivityFeedService? feedService,
     WebSocketService? wsService,
   })  : _feedService = feedService ?? ActivityFeedService(),
-        _wsService = wsService ?? WebSocketService() {
-    initDashboard();
-  }
+        _wsService = wsService ?? WebSocketService();
 
   List<ActivityEntryData> get entries => _entries;
   AgentStateData get agentState => _agentState;
@@ -29,10 +27,12 @@ class DashboardProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  Future<void> initDashboard() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
+  Future<void> initDashboard({bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+    }
 
     try {
       final data = await _feedService.getActivityFeed();
@@ -42,9 +42,9 @@ class DashboardProvider extends ChangeNotifier {
 
       _subscribeWebSocket();
     } catch (e) {
-      _errorMessage = 'Failed to load dashboard.';
+      if (!silent) _errorMessage = 'Failed to load dashboard.';
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }

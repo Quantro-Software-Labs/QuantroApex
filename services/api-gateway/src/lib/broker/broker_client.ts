@@ -18,6 +18,8 @@ export interface CreateOrderParams {
   qty: number;
   type: 'MARKET' | 'LIMIT';
   limitPrice?: number;
+  /** Used by mock/paper fallback when no limit price — live quote from execution engine. */
+  estimatedPrice?: number;
   idempotencyKey?: string;
 }
 
@@ -38,5 +40,6 @@ export interface IBrokerClient {
   getAccount(): Promise<BrokerAccount>;
   getPositions(): Promise<BrokerPosition[]>;
   createOrder(params: CreateOrderParams): Promise<BrokerOrder>;
+  getOrder(orderId: string): Promise<BrokerOrder>;
   cancelOrder(orderId: string): Promise<void>;
 }

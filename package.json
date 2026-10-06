@@ -4,20 +4,39 @@
   "private": true,
   "description": "QuantroApex — Autonomous AI Trading System",
   "workspaces": [
-    "services/*",
-    "packages/*"
+    "services/api-gateway",
+    "apps/trader-web"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@quantroapex/api-gateway",
+    "dev:all": "bash scripts/dev-all.sh",
     "build": "npm run build --workspace=@quantroapex/api-gateway",
     "test": "npm run test --workspace=@quantroapex/api-gateway",
+    "test:python": "cd services/ai-service && pytest && cd ../data-pipeline && pytest",
+    "test:all": "npm run test && npm run test:python && npm run mobile:test",
     "db:generate": "npm run db:generate --workspace=@quantroapex/api-gateway",
     "db:migrate": "npm run db:migrate --workspace=@quantroapex/api-gateway",
     "db:push": "npm run db:push --workspace=@quantroapex/api-gateway",
     "db:studio": "npm run db:studio --workspace=@quantroapex/api-gateway",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "setup": "npm install && npm run docker:up && npm run db:generate && npm run db:migrate"
+    "ai:dev": "cd services/ai-service && .venv/bin/uvicorn app.main:app --reload --port 8001",
+    "data:setup": "cd services/data-pipeline && python main.py setup",
+    "data:stream": "cd services/data-pipeline && python main.py stream",
+    "data:api": "cd services/data-pipeline && python main.py api",
+    "data:all": "cd services/data-pipeline && python main.py all",
+    "quant:dev": "cd services/quant-engine && .venv/bin/uvicorn app.main:app --reload --port 8002",
+    "mobile:web": "cd apps/mobile && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0",
+    "mobile:build": "cd apps/mobile && flutter build web --release",
+    "mobile:serve": "npx -y serve apps/mobile/build/web -p 8080",
+    "trader:dev": "cd apps/trader-web && (pnpm dev || npm run dev)",
+    "trader:build": "cd apps/trader-web && (pnpm build || npm run build)",
+    "trader:start": "cd apps/trader-web && (pnpm start || npm run start)",
+    "docker:up": "docker compose --profile full up -d",
+    "docker:down": "docker compose --profile full down",
+    "load:smoke": "k6 run scripts/load-tests/smoke_test.js --env BASE_URL=http://localhost:3000",
+    "smoke:node": "node scripts/load-tests/smoke_test.node.js",
+    "load:test": "k6 run scripts/load-tests/load_test.js --env BASE_URL=http://localhost:3000",
+    "mobile:test": "cd apps/mobile && flutter test",
+    "setup": "npm install && npm run docker:up && npm run db:generate && npm run db:push"
   },
   "engines": {
     "node": ">=20.0.0"

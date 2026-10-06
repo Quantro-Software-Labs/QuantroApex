@@ -60,9 +60,13 @@ class SimulationService {
     return (response as Map<String, dynamic>)['mode'] as String;
   }
 
-  Future<void> resetSimulation() async {
+  Future<void> resetSimulation({double? startingCapital}) async {
     final token = await _authService.getAccessToken();
-    await _apiService.post('/simulation/reset', token: token);
+    await _apiService.post(
+      '/simulation/reset',
+      token: token,
+      body: startingCapital != null ? {'startingCapital': startingCapital} : {},
+    );
   }
 
   Future<Map<String, dynamic>> generateTicks({String? symbol}) async {

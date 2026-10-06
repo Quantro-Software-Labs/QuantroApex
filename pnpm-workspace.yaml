@@ -1,0 +1,3 @@
+packages:
+  - 'services/api-gateway'
+  - 'apps/trader-web'

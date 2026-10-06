@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #060D1A; overflow: hidden; }
+    #chart { width: 100%; height: 100%; }
+  </style>
+  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div id="chart"></div>
+  <script>
+    const NAVY = '#060D1A';
+    const GRID = '#1E293B';
+    const MUTED = '#94A3B8';
+
+    const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+      layout: {
+        background: { type: 'solid', color: NAVY },
+        textColor: MUTED,
+      },
+      grid: {
+        vertLines: { color: GRID },
+        horzLines: { color: GRID },
+      },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: GRID },
+      timeScale: { borderColor: GRID, timeVisible: true, secondsVisible: false },
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#22C55E',
+      downColor: '#EF4444',
+      borderVisible: false,
+      wickUpColor: '#22C55E',
+      wickDownColor: '#EF4444',
+    });
+
+    const volumeSeries = chart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
+    const overlayVisibility = {
+      structure: true,
+      ob: true,
+      fvg: true,
+      liquidity: true,
+      pd: true,
+      ema20: true,
+      ema50: true,
+      ema200: true,
+    };
+
+    const priceLineBuckets = {
+      structure: [],
+      ob: [],
+      fvg: [],
+      liquidity: [],
+      pd: [],
+    };
+
+    const emaSeries = {
+      ema20: null,
+      ema50: null,
+      ema200: null,
+    };
+
+    let lastOverlayPayload = null;
+    let lastCandleData = [];
+
+    function postToFlutter(type, payload) {
+      try {
+        if (window.FlutterChannel && typeof window.FlutterChannel.postMessage === 'function') {
+          window.FlutterChannel.postMessage(JSON.stringify({ type, payload }));
+        }
+      } catch (_) {}
+    }
+
+    function clearBucket(key) {
+      const lines = priceLineBuckets[key] || [];
+      for (const p of lines) {
+        try { candleSeries.removePriceLine(p); } catch (_) {}
+      }
+      priceLineBuckets[key] = [];
+    }
+
+    function clearAllPriceLines() {
+      Object.keys(priceLineBuckets).forEach(clearBucket);
+    }
+
+    function ensureEmaSeries(key, color) {
+      if (!emaSeries[key]) {
+        emaSeries[key] = chart.addLineSeries({
+          color,
+          lineWidth: 1,
+          title: key.toUpperCase(),
+          visible: overlayVisibility[key] !== false,
+        });
+      }
+      return emaSeries[key];
+    }
+
+    function computeEma(candles, period) {
+      if (!candles.length) return [];
+      const k = 2 / (period + 1);
+      const out = [];
+      let ema = candles[0].close;
+      for (let i = 0; i < candles.length; i++) {
+        const c = candles[i];
+        ema = i === 0 ? c.close : (c.close * k) + (ema * (1 - k));
+        if (i >= period - 1) {
+          out.push({ time: c.time, value: ema });
+        }
+      }
+      return out;
+    }
+
+    function applyEmaOverlays(candles) {
+      const specs = [
+        { key: 'ema20', period: 20, color: '#3B82F6' },
+        { key: 'ema50', period: 50, color: '#F59E0B' },
+        { key: 'ema200', period: 200, color: '#A855F7' },
+      ];
+      for (const s of specs) {
+        const series = ensureEmaSeries(s.key, s.color);
+        series.applyOptions({ visible: !!overlayVisibility[s.key] });
+        series.setData(overlayVisibility[s.key] ? computeEma(candles, s.period) : []);
+      }
+    }
+
+    function drawPriceLines(key, items, visible) {
+      clearBucket(key);
+      if (!visible || !items) return;
+      for (const item of items) {
+        const line = candleSeries.createPriceLine({
+          price: item.price,
+          color: item.color || '#94A3B8',
+          lineWidth: item.lineWidth || 1,
+          lineStyle: item.lineStyle != null ? item.lineStyle : LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: item.title || '',
+        });
+        priceLineBuckets[key].push(line);
+      }
+    }
+
+    function normalizeOverlays(raw) {
+      if (!raw) return null;
+      // Accept both flat overlay map and SmcOverlays shape
+      if (raw.orderBlocks || raw.fairValueGaps || raw.structureEvents) {
+        return {
+          ob: (raw.orderBlocks || []).map((ob) => ({
+            price: ob.price,
+            color: ob.side === 'bullish' ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)',
+            title: ob.label || 'OB',
+          })),
+          fvg: (raw.fairValueGaps || []).map((fvg) => ({
+            price: (Number(fvg.top) + Number(fvg.bottom)) / 2,
+            color: 'rgba(59,130,246,0.5)',
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            title: fvg.label || 'FVG',
+          })),
+          liquidity: (raw.liquidityLevels || []).map((lvl) => ({
+            price: lvl.price,
+            color: 'rgba(234,179,8,0.55)',
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            title: lvl.label || 'Liq',
+          })),
+          structure: (raw.structureEvents || []).map((ev) => ({
+            price: ev.price,
+            color: ev.type === 'BOS' ? 'rgba(168,85,247,0.75)' : 'rgba(14,165,233,0.75)',
+            lineWidth: 2,
+            title: ev.type || 'BOS',
+          })),
+          pd: (raw.premiumDiscount || raw.pd || []).map((z) => ({
+            price: z.price,
+            color: z.zone === 'premium' ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)',
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            title: z.label || (z.zone === 'premium' ? 'Premium' : 'Discount'),
+          })),
+          ema20: raw.ema20 || null,
+          ema50: raw.ema50 || null,
+          ema200: raw.ema200 || null,
+        };
+      }
+      return raw;
+    }
+
+    function renderOverlays() {
+      const o = lastOverlayPayload;
+      if (!o) {
+        clearAllPriceLines();
+        applyEmaOverlays(lastCandleData);
+        return;
+      }
+      drawPriceLines('structure', o.structure, overlayVisibility.structure);
+      drawPriceLines('ob', o.ob, overlayVisibility.ob);
+      drawPriceLines('fvg', o.fvg, overlayVisibility.fvg);
+      drawPriceLines('liquidity', o.liquidity, overlayVisibility.liquidity);
+      drawPriceLines('pd', o.pd, overlayVisibility.pd);
+
+      // Custom EMA point arrays override computed EMAs when provided
+      ['ema20', 'ema50', 'ema200'].forEach((key) => {
+        const color = key === 'ema20' ? '#3B82F6' : key === 'ema50' ? '#F59E0B' : '#A855F7';
+        const series = ensureEmaSeries(key, color);
+        series.applyOptions({ visible: !!overlayVisibility[key] });
+        if (overlayVisibility[key] && Array.isArray(o[key]) && o[key].length) {
+          series.setData(o[key].map((p) => ({
+            time: typeof p.time === 'number' ? p.time : Math.floor(new Date(p.time).getTime() / 1000),
+            value: Number(p.value),
+          })).filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value)));
+        } else if (overlayVisibility[key]) {
+          const period = key === 'ema20' ? 20 : key === 'ema50' ? 50 : 200;
+          series.setData(computeEma(lastCandleData, period));
+        } else {
+          series.setData([]);
+        }
+      });
+    }
+
+    function setCandles(raw) {
+      const data = (raw || []).map((c) => ({
+        time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+      })).filter((c) => Number.isFinite(c.open) && Number.isFinite(c.time));
+
+      data.sort((a, b) => a.time - b.time);
+      lastCandleData = data;
+      candleSeries.setData(data);
+
+      const volumes = (raw || []).map((c) => ({
+        time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
+        value: Number(c.volume || 0),
+        color: Number(c.close) >= Number(c.open) ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)',
+      })).filter((v) => Number.isFinite(v.time));
+      volumes.sort((a, b) => a.time - b.time);
+      volumeSeries.setData(volumes);
+
+      chart.timeScale().fitContent();
+      renderOverlays();
+      postToFlutter('candlesApplied', { count: data.length });
+    }
+
+    function setOverlays(raw) {
+      lastOverlayPayload = normalizeOverlays(raw);
+      renderOverlays();
+      postToFlutter('overlaysApplied', { keys: Object.keys(overlayVisibility) });
+    }
+
+    function toggleOverlay(name, enabled) {
+      const key = String(name || '').toLowerCase();
+      if (!(key in overlayVisibility)) return false;
+      overlayVisibility[key] = enabled !== false && enabled !== 'false' && enabled !== 0;
+      renderOverlays();
+      postToFlutter('overlayToggled', { name: key, enabled: overlayVisibility[key] });
+      return true;
+    }
+
+    function setSmcOverlays(smc) {
+      setOverlays(smc);
+    }
+
+    function addIndicator(name, points, color) {
+      const series = chart.addLineSeries({
+        color: color || '#3B82F6',
+        lineWidth: 2,
+        title: name,
+      });
+      const data = (points || []).map((p) => ({
+        time: typeof p.time === 'number' ? p.time : Math.floor(new Date(p.time).getTime() / 1000),
+        value: Number(p.value),
+      })).filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value));
+      series.setData(data);
+      return true;
+    }
+
+    window.addEventListener('resize', () => {
+      chart.applyOptions({
+        width: document.body.clientWidth,
+        height: document.body.clientHeight,
+      });
+    });
+
+    window.QuantroChart = {
+      setCandles,
+      setOverlays,
+      toggleOverlay,
+      setSmcOverlays,
+      addIndicator,
+      setTimeframeLabel: () => {},
+    };
+
+    window.addEventListener('message', (event) => {
+      try {
+        const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (!msg || !msg.type) return;
+        if (msg.type === 'setCandles') setCandles(msg.payload);
+        if (msg.type === 'setOverlays' || msg.type === 'setSmc') setOverlays(msg.payload);
+        if (msg.type === 'toggleOverlay') toggleOverlay(msg.name, msg.enabled);
+        if (msg.type === 'addIndicator') addIndicator(msg.name, msg.points, msg.color);
+      } catch (_) {}
+    });
+
+    postToFlutter('ready', { version: '4.1.0' });
+  </script>
+</body>
+</html>

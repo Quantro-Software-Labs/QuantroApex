@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -47,13 +48,19 @@ class ApiService {
       : _client = client ?? http.Client(),
         baseUrl = baseUrl ?? _computedDefaultBaseUrl;
 
-  Map<String, String> _buildHeaders([String? token]) {
+  Future<String?> _resolveToken(String? token) async {
+    if (token != null && token.isNotEmpty) return token;
+    return FirebaseAuth.instance.currentUser?.getIdToken();
+  }
+
+  Future<Map<String, String>> _buildHeaders([String? token]) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
+    final resolved = await _resolveToken(token);
+    if (resolved != null && resolved.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $resolved';
     }
     return headers;
   }
@@ -94,7 +101,8 @@ class ApiService {
     } on TimeoutException {
       throw ApiException(
         statusCode: 408,
-        message: 'Request timed out. Please check server connectivity and retry.',
+        message:
+            'Request timed out reaching $baseUrl. Start backends (npm run dev:all) and stay on the same Wi‑Fi.',
       );
     } catch (e) {
       throw ApiException(
@@ -107,30 +115,43 @@ class ApiService {
   }
 
   Future<dynamic> get(String path, {String? token}) async {
+    final headers = await _buildHeaders(token);
     return _safeExecute(
       () => _client.get(
         Uri.parse('$baseUrl$path'),
-        headers: _buildHeaders(token),
+        headers: headers,
       ),
     );
   }
 
   Future<dynamic> post(String path, {dynamic body, String? token}) async {
+    final headers = await _buildHeaders(token);
     return _safeExecute(
       () => _client.post(
         Uri.parse('$baseUrl$path'),
-        headers: _buildHeaders(token),
+        headers: headers,
         body: body != null ? jsonEncode(body) : null,
       ),
     );
   }
 
   Future<dynamic> put(String path, {dynamic body, String? token}) async {
+    final headers = await _buildHeaders(token);
     return _safeExecute(
       () => _client.put(
         Uri.parse('$baseUrl$path'),
-        headers: _buildHeaders(token),
+        headers: headers,
         body: body != null ? jsonEncode(body) : null,
+      ),
+    );
+  }
+
+  Future<dynamic> delete(String path, {String? token}) async {
+    final headers = await _buildHeaders(token);
+    return _safeExecute(
+      () => _client.delete(
+        Uri.parse('$baseUrl$path'),
+        headers: headers,
       ),
     );
   }

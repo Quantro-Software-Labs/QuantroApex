@@ -15,12 +15,12 @@ class NotificationSettingsScreen extends StatelessWidget {
     final prefs = provider.preferences;
 
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
+        backgroundColor: AppColors.darkBackground,
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.primary),
-        title: Text('Notification Preferences', style: AppTypography.h2(color: AppColors.primary)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text('Notification Preferences', style: AppTypography.h2(color: Colors.white)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -28,11 +28,11 @@ class NotificationSettingsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Alert Channel Configurations', style: AppTypography.h2(color: AppColors.primary)),
+              Text('Alert Channel Configurations', style: AppTypography.h2(color: AppColors.white)),
               const SizedBox(height: AppSpacing.space1),
               Text(
                 'Customize quiet confidence alerts across trade execution, risk enforcement, and strategy advisory signals.',
-                style: AppTypography.secondary(color: AppColors.muted),
+                style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
               ),
               const SizedBox(height: AppSpacing.space4),
 
@@ -40,7 +40,7 @@ class NotificationSettingsScreen extends StatelessWidget {
                 const Center(
                   child: Padding(
                     padding: EdgeInsets.all(AppSpacing.space4),
-                    child: CircularProgressIndicator(color: AppColors.accent),
+                    child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
                   ),
                 )
               else ...[
@@ -53,14 +53,14 @@ class NotificationSettingsScreen extends StatelessWidget {
                         value: prefs.tradeAlerts,
                         onChanged: (val) => provider.updatePreferences(tradeAlerts: val),
                       ),
-                      const Divider(color: AppColors.border, height: 24),
+                      const Divider(color: Color(0xFF1E293B), height: 24),
                       _SwitchTile(
                         title: 'Risk Vault Warnings',
                         subtitle: 'High-priority notifications for emergency stops or risk parameter breaches.',
                         value: prefs.riskAlerts,
                         onChanged: (val) => provider.updatePreferences(riskAlerts: val),
                       ),
-                      const Divider(color: AppColors.border, height: 24),
+                      const Divider(color: Color(0xFF1E293B), height: 24),
                       _SwitchTile(
                         title: 'Advisory Mode Signals',
                         subtitle: 'Alerts when high-conviction trade recommendations are ready for manual review.',
@@ -72,7 +72,7 @@ class NotificationSettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.space5),
 
-                Text('Digest Frequency', style: AppTypography.h2(color: AppColors.primary)),
+                Text('Digest Frequency', style: AppTypography.h2(color: AppColors.white)),
                 const SizedBox(height: AppSpacing.space2),
 
                 ApexCard(
@@ -81,11 +81,11 @@ class NotificationSettingsScreen extends StatelessWidget {
                       return RadioListTile<String>(
                         title: Text(
                           freq == 'OFF' ? 'Disabled' : (freq == 'DAILY' ? 'Daily Morning Summary' : 'Weekly Performance Audit'),
-                          style: AppTypography.body(color: AppColors.primary),
+                          style: AppTypography.body(color: AppColors.white),
                         ),
                         value: freq,
                         groupValue: prefs.digestFrequency,
-                        activeColor: AppColors.accent,
+                        activeColor: const Color(0xFF3B82F6),
                         onChanged: (val) {
                           if (val != null) provider.updatePreferences(digestFrequency: val);
                         },
@@ -125,16 +125,16 @@ class _SwitchTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: AppTypography.h3(color: AppColors.primary)),
+              Text(title, style: AppTypography.h3(color: AppColors.white)),
               const SizedBox(height: 4),
-              Text(subtitle, style: AppTypography.caption(color: AppColors.muted)),
+              Text(subtitle, style: AppTypography.caption(color: const Color(0xFF64748B))),
             ],
           ),
         ),
         const SizedBox(width: AppSpacing.space2),
         Switch.adaptive(
           value: value,
-          activeColor: AppColors.accent,
+          activeColor: const Color(0xFF3B82F6),
           onChanged: onChanged,
         ),
       ],

@@ -16,11 +16,10 @@ class StrategyProvider extends ChangeNotifier {
   String? _errorMessage;
 
   StrategyProvider({StrategyService? service})
-      : _service = service ?? StrategyService() {
-    loadMarketplace();
-  }
+      : _service = service ?? StrategyService();
 
   List<StrategyData> get strategies => _strategies;
+  List<StrategyData> get allStrategies => _strategies;
   List<StrategyData> get recommendedStrategies => _recommendedStrategies;
   StrategyData? get selectedStrategyDetail => _selectedStrategyDetail;
   String get assetClassFilter => _assetClassFilter;
@@ -28,6 +27,9 @@ class StrategyProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSelecting => _isSelecting;
   String? get errorMessage => _errorMessage;
+
+  Future<void> initMarketplace() => loadMarketplace();
+
 
   Future<void> loadMarketplace() async {
     _isLoading = true;

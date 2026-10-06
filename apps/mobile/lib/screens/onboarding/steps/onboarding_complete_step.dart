@@ -19,13 +19,13 @@ class OnboardingCompleteStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: AppSpacing.space4),
-          const StatusBadge(label: 'Setup Complete', color: AppColors.success),
+          const StatusBadge(label: 'Setup Complete', color: Color(0xFF10B981)),
           const SizedBox(height: AppSpacing.space4),
-          Text("You're Set", style: AppTypography.h1(color: AppColors.primary)),
+          Text("You're Set", style: AppTypography.h1(color: AppColors.white)),
           const SizedBox(height: AppSpacing.space2),
           Text(
             'Apex is active and monitoring the markets according to your configured boundaries.',
-            style: AppTypography.body(color: AppColors.muted),
+            style: AppTypography.body(color: const Color(0xFF94A3B8)),
           ),
           const SizedBox(height: AppSpacing.space5),
 
@@ -33,28 +33,28 @@ class OnboardingCompleteStep extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Configuration Summary', style: AppTypography.h3(color: AppColors.primary)),
+                Text('Configuration Summary', style: AppTypography.h3(color: AppColors.white)),
                 const SizedBox(height: AppSpacing.space3),
                 _SummaryRow(
                   label: 'Experience Path',
                   value: provider.path == 'EXPRESS' ? 'Express Setup' : 'Newcomer Guided',
                 ),
-                const Divider(),
+                const Divider(color: Color(0xFF1E293B)),
                 _SummaryRow(
                   label: 'Trading Mode',
                   value: provider.preferredMode == 'SIM' ? 'Simulation (Paper)' : 'Live Trading',
                 ),
-                const Divider(),
+                const Divider(color: Color(0xFF1E293B)),
                 _SummaryRow(
                   label: 'Daily Loss Limit',
                   value: '\$${provider.dailyLossLimit.toStringAsFixed(0)}',
                 ),
-                const Divider(),
+                const Divider(color: Color(0xFF1E293B)),
                 _SummaryRow(
                   label: 'Max Drawdown Floor',
                   value: '${(provider.maxDrawdown * 100).toStringAsFixed(0)}%',
                 ),
-                const Divider(),
+                const Divider(color: Color(0xFF1E293B)),
                 _SummaryRow(
                   label: 'Global Brain Learning',
                   value: provider.globalBrainConsent ? 'Opted In' : 'Opted Out',
@@ -104,8 +104,8 @@ class _SummaryRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: AppTypography.secondary(color: AppColors.muted)),
-          Text(value, style: AppTypography.body(color: AppColors.primary)),
+          Text(label, style: AppTypography.secondary(color: const Color(0xFF94A3B8))),
+          Text(value, style: AppTypography.body(color: AppColors.white)),
         ],
       ),
     );

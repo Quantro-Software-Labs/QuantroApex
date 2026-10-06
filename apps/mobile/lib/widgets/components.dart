@@ -22,13 +22,24 @@ class PrimaryButton extends StatelessWidget {
       height: 48,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF2563EB),
+          foregroundColor: AppColors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+        ),
         child: isLoading
             ? const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
               )
-            : Text(label, style: AppTypography.body(color: AppColors.white)),
+            : Text(
+                label,
+                style: AppTypography.body(color: AppColors.white).copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
       ),
     );
   }
@@ -52,11 +63,17 @@ class SecondaryButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.accent,
-          side: const BorderSide(color: AppColors.accent),
+          foregroundColor: const Color(0xFF3B82F6),
+          side: const BorderSide(color: Color(0xFF1E293B)),
+          backgroundColor: const Color(0xFF0F172A),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        child: Text(label, style: AppTypography.body(color: AppColors.accent)),
+        child: Text(
+          label,
+          style: AppTypography.body(color: const Color(0xFF3B82F6)).copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
@@ -76,7 +93,10 @@ class GhostButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextButton(
       onPressed: onPressed,
-      child: Text(label, style: AppTypography.secondary(color: AppColors.muted)),
+      child: Text(
+        label,
+        style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
+      ),
     );
   }
 }
@@ -86,22 +106,39 @@ class ApexCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = AppSpacing.space4,
+    this.backgroundColor = const Color(0xFF0F172A),
+    this.borderColor = const Color(0xFF1E293B),
   });
 
   final Widget child;
-  final double padding;
+  final dynamic padding;
+  final Color backgroundColor;
+  final Color borderColor;
 
   @override
   Widget build(BuildContext context) {
+    EdgeInsets resolvedPadding;
+    if (padding is double) {
+      resolvedPadding = EdgeInsets.all(padding as double);
+    } else if (padding is EdgeInsetsGeometry) {
+      resolvedPadding = padding as EdgeInsets;
+    } else {
+      resolvedPadding = const EdgeInsets.all(AppSpacing.space4);
+    }
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(padding),
+      padding: resolvedPadding,
       decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 1.0),
         boxShadow: const [
-          BoxShadow(color: Color(0x0A000000), blurRadius: 2, offset: Offset(0, 1)),
+          BoxShadow(
+            color: Color(0x20000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
         ],
       ),
       child: child,
@@ -115,29 +152,39 @@ class InputField extends StatelessWidget {
     required this.label,
     required this.controller,
     this.obscureText = false,
+    this.enabled = true,
     this.keyboardType,
     this.validator,
+    this.onChanged,
   });
 
   final String label;
   final TextEditingController controller;
   final bool obscureText;
+  final bool enabled;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTypography.secondary(color: AppColors.muted)),
+        Text(label, style: AppTypography.secondary(color: const Color(0xFF94A3B8))),
         const SizedBox(height: AppSpacing.space2),
         TextFormField(
           controller: controller,
           obscureText: obscureText,
+          enabled: enabled,
           keyboardType: keyboardType,
           validator: validator,
-          style: AppTypography.body(color: AppColors.primary),
+          onChanged: onChanged,
+          style: AppTypography.body(color: AppColors.white),
+          decoration: const InputDecoration(
+            filled: true,
+            fillColor: Color(0xFF0F172A),
+          ),
         ),
       ],
     );
@@ -149,23 +196,32 @@ class StatusBadge extends StatelessWidget {
     super.key,
     required this.label,
     required this.color,
+    this.textColor,
   });
 
   final String label;
   final Color color;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.space2,
-        vertical: AppSpacing.space1,
+        vertical: 4,
       ),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(12),
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
       ),
-      child: Text(label, style: AppTypography.caption(color: AppColors.white)),
+      child: Text(
+        label,
+        style: AppTypography.caption(color: textColor ?? color).copyWith(
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+        ),
+      ),
     );
   }
 }
@@ -187,11 +243,14 @@ class MetricTile extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTypography.caption(color: AppColors.muted)),
+        Text(
+          label,
+          style: AppTypography.caption(color: const Color(0xFF94A3B8)),
+        ),
         const SizedBox(height: AppSpacing.space1),
         Text(
           value,
-          style: AppTypography.h2(color: valueColor ?? AppColors.primary),
+          style: AppTypography.h2(color: valueColor ?? AppColors.white),
         ),
       ],
     );
@@ -203,7 +262,7 @@ class ActivityFeedEntry extends StatelessWidget {
     super.key,
     required this.message,
     required this.timestamp,
-    this.accentColor = AppColors.accent,
+    this.accentColor = const Color(0xFF3B82F6),
   });
 
   final String message;
@@ -218,8 +277,8 @@ class ActivityFeedEntry extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 3,
-            height: 40,
+            width: 4,
+            height: 36,
             decoration: BoxDecoration(
               color: accentColor,
               borderRadius: BorderRadius.circular(2),
@@ -230,9 +289,17 @@ class ActivityFeedEntry extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(message, style: AppTypography.body(color: AppColors.primary)),
-                const SizedBox(height: AppSpacing.space1),
-                Text(timestamp, style: AppTypography.caption(color: AppColors.muted)),
+                Text(
+                  message,
+                  style: AppTypography.body(color: AppColors.white).copyWith(
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  timestamp,
+                  style: AppTypography.caption(color: const Color(0xFF64748B)),
+                ),
               ],
             ),
           ),
@@ -268,19 +335,19 @@ class StrategyCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusBadge(label: assetClass, color: AppColors.accentMid),
+              StatusBadge(label: assetClass, color: const Color(0xFF2563EB)),
               const SizedBox(width: AppSpacing.space2),
-              StatusBadge(label: riskLevel, color: AppColors.muted),
+              StatusBadge(label: riskLevel, color: const Color(0xFF64748B)),
             ],
           ),
           const SizedBox(height: AppSpacing.space3),
-          Text(name, style: AppTypography.h2(color: AppColors.primary)),
+          Text(name, style: AppTypography.h2(color: AppColors.white)),
           const SizedBox(height: AppSpacing.space2),
-          Text(description, style: AppTypography.secondary(color: AppColors.muted)),
+          Text(description, style: AppTypography.secondary(color: const Color(0xFF94A3B8))),
           const SizedBox(height: AppSpacing.space3),
           Text(
             '$userCount active users',
-            style: AppTypography.caption(color: AppColors.muted),
+            style: AppTypography.caption(color: const Color(0xFF64748B)),
           ),
           const SizedBox(height: AppSpacing.space3),
           PrimaryButton(label: 'Start with this', onPressed: onStart),

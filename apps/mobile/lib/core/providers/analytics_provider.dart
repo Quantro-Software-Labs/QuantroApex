@@ -13,9 +13,7 @@ class AnalyticsProvider extends ChangeNotifier {
   String? _errorMessage;
 
   AnalyticsProvider({AnalyticsService? service})
-      : _service = service ?? AnalyticsService() {
-    loadAnalytics();
-  }
+      : _service = service ?? AnalyticsService();
 
   String get selectedTimeframe => _selectedTimeframe;
   PerformanceMetricsData? get metrics => _metrics;
@@ -24,10 +22,12 @@ class AnalyticsProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  Future<void> loadAnalytics() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
+  Future<void> loadAnalytics({bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+    }
 
     try {
       final results = await Future.wait([
@@ -40,9 +40,9 @@ class AnalyticsProvider extends ChangeNotifier {
       _equityCurve = results[1] as List<EquityPointData>;
       _tradeHistory = results[2] as List<TradeHistoryItem>;
     } catch (e) {
-      _errorMessage = 'Failed to load analytics data.';
+      if (!silent) _errorMessage = 'Failed to load analytics data.';
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }

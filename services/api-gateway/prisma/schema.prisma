@@ -37,15 +37,24 @@ enum OrderSide {
 enum OrderType {
   MARKET
   LIMIT
+  STOP
+  STOP_LIMIT
+  TRAILING_STOP
 }
 
 enum OrderStatus {
   PENDING
   SUBMITTED
+  ACCEPTED
   FILLED
   PARTIALLY_FILLED
   CANCELLED
   REJECTED
+}
+
+enum TradeOwner {
+  APEX
+  MANUAL
 }
 
 enum AgentPhase {
@@ -59,6 +68,7 @@ enum AssetClass {
   CRYPTO
   STOCKS
   FOREX
+  GLOBAL
 }
 
 enum RiskLevel {
@@ -81,68 +91,88 @@ enum ActivityEventType {
   SYSTEM
 }
 
+enum MarketDataSource {
+  ALPACA
+  POLYGON
+  CCXT
+  OANDA
+  SIMULATED
+}
+
+enum PlanTier {
+  FREE
+  CORE
+  PRO
+  ELITE
+}
+
+enum KYCStatus {
+  PENDING
+  SUBMITTED
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+}
+
 model User {
   id                    String          @id @default(cuid())
-  email                 String          @unique
-  passwordHash          String          @map("password_hash")
+  firebaseUid           String          @unique @map("firebase_uid")
+  email                 String?         @unique
+  phone                 String?         @unique
+  name                  String          @default("QuantroApex User")
   firstName             String?         @map("first_name")
   lastName              String?         @map("last_name")
+  preferredMarket       String          @default("US_MARKETS") @map("preferred_market")
   experienceLevel       ExperienceLevel @default(NEWCOMER) @map("experience_level")
   onboardingCompletedAt DateTime?       @map("onboarding_completed_at")
+  lastSeenAt            DateTime        @default(now()) @map("last_seen_at")
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")
 
   profile            UserProfile?
-  riskVault          RiskVault?
+  riskVaults         RiskVault[]
   onboardingProgress OnboardingProgress?
-  refreshTokens      RefreshToken[]
   userStrategies     UserStrategy[]
   portfolios         Portfolio[]
   orders             Order[]
   activityFeed       ActivityFeedEntry[]
   agentState         AgentState?
   notificationPrefs  NotificationPreferences?
+  tradeLearningLogs  TradeLearningData[]
+  waitlistEntries    Waitlist[]
+  subscription       Subscription?
+  kycVerification    KYCVerification?
 
   @@map("users")
 }
 
 model UserProfile {
-  id                    String   @id @default(cuid())
-  userId                String   @unique @map("user_id")
-  riskProfile           Json?    @map("risk_profile")
-  tradingCapital        Decimal? @map("trading_capital") @db.Decimal(18, 2)
-  preferredTradingMode  PortfolioMode @default(SIM) @map("preferred_trading_mode")
-  globalBrainConsent    Boolean  @default(false) @map("global_brain_consent")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                   String        @id @default(cuid())
+  userId               String        @unique @map("user_id")
+  riskProfile          Json?         @map("risk_profile")
+  tradingCapital       Decimal?      @map("trading_capital") @db.Decimal(18, 2)
+  preferredTradingMode PortfolioMode @default(SIM) @map("preferred_trading_mode")
+  globalBrainConsent   Boolean       @default(false) @map("global_brain_consent")
+  alpacaApiKey         String?       @map("alpaca_api_key")
+  alpacaSecretKey      String?       @map("alpaca_secret_key")
+  isBrokerConnected    Boolean       @default(false) @map("is_broker_connected")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_profiles")
 }
 
-model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  tokenHash String   @unique @map("token_hash")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("refresh_tokens")
-}
-
 model OnboardingProgress {
-  id           String         @id @default(cuid())
-  userId       String         @unique @map("user_id")
-  path         OnboardingPath @default(NEWCOMER)
-  currentStep  Int            @default(1) @map("current_step")
-  state        Json           @default("{}")
-  completedAt  DateTime?      @map("completed_at")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  id          String         @id @default(cuid())
+  userId      String         @unique @map("user_id")
+  path        OnboardingPath @default(NEWCOMER)
+  currentStep Int            @default(1) @map("current_step")
+  state       Json           @default("{}")
+  completedAt DateTime?      @map("completed_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -150,38 +180,56 @@ model OnboardingProgress {
 }
 
 model RiskVault {
-  id                 String    @id @default(cuid())
-  userId             String    @unique @map("user_id")
-  dailyLossLimit     Decimal   @map("daily_loss_limit") @db.Decimal(18, 2)
-  maxDrawdown        Decimal   @map("max_drawdown") @db.Decimal(5, 4)
-  perTradeExposure   Decimal   @map("per_trade_exposure") @db.Decimal(5, 4)
-  cryptoEnabled      Boolean   @default(false) @map("crypto_enabled")
-  stocksEnabled      Boolean   @default(true) @map("stocks_enabled")
-  forexEnabled       Boolean   @default(false) @map("forex_enabled")
+  id               String     @id @default(cuid())
+  userId           String     @map("user_id")
+  assetClass       AssetClass @map("asset_class")
+  dailyLossLimit   Decimal    @map("daily_loss_limit") @db.Decimal(18, 2)
+  maxDrawdown      Decimal    @map("max_drawdown") @db.Decimal(5, 4)
+  perTradeExposure Decimal    @map("per_trade_exposure") @db.Decimal(5, 4)
+  assetsEnabled    Boolean    @default(true) @map("assets_enabled")
+  emergencyStop    Boolean    @default(false) @map("emergency_stop")
+  /// Legacy compatibility field — prefer emergencyStop
   emergencyStoppedAt DateTime? @map("emergency_stopped_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  cryptoEnabled    Boolean    @default(false) @map("crypto_enabled")
+  stocksEnabled    Boolean    @default(true) @map("stocks_enabled")
+  forexEnabled     Boolean    @default(false) @map("forex_enabled")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, assetClass])
+  @@index([userId])
   @@map("risk_vaults")
 }
 
+model Waitlist {
+  id         String     @id @default(cuid())
+  userId     String     @map("user_id")
+  assetClass AssetClass @map("asset_class")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetClass])
+  @@map("waitlist")
+}
+
 model Strategy {
-  id              String      @id @default(cuid())
-  slug            String      @unique
+  id              String     @id @default(cuid())
+  slug            String     @unique
   name            String
   description     String
-  assetClass      AssetClass  @map("asset_class")
-  riskLevel       RiskLevel   @map("risk_level")
+  assetClass      AssetClass @map("asset_class")
+  riskLevel       RiskLevel  @map("risk_level")
   style           String
   rules           Json
-  backtestSummary Json        @map("backtest_summary")
-  activeUserCount Int         @default(0) @map("active_user_count")
-  isPremium       Boolean     @default(false) @map("is_premium")
-  isActive        Boolean     @default(true) @map("is_active")
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
+  backtestSummary Json       @map("backtest_summary")
+  activeUserCount Int        @default(0) @map("active_user_count")
+  isPremium       Boolean    @default(false) @map("is_premium")
+  isActive        Boolean    @default(true) @map("is_active")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
 
   userStrategies UserStrategy[]
   agentStates    AgentState[]
@@ -237,42 +285,52 @@ model Position {
 }
 
 model Order {
-  id            String        @id @default(cuid())
-  userId        String        @map("user_id")
-  symbol        String
-  side          OrderSide
-  orderType     OrderType     @map("order_type")
-  quantity      Decimal       @db.Decimal(18, 8)
-  limitPrice    Decimal?      @map("limit_price") @db.Decimal(18, 4)
-  status        OrderStatus   @default(PENDING)
-  isSimulated   Boolean       @default(false) @map("is_simulated")
-  brokerOrderId String?       @map("broker_order_id")
-  idempotencyKey String?      @unique @map("idempotency_key")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  id             String      @id @default(cuid())
+  userId         String      @map("user_id")
+  symbol         String
+  assetClass     AssetClass  @default(STOCKS) @map("asset_class")
+  side           OrderSide
+  orderType      OrderType   @map("order_type")
+  quantity       Decimal     @db.Decimal(18, 8)
+  limitPrice     Decimal?    @map("limit_price") @db.Decimal(18, 4)
+  stopPrice      Decimal?    @map("stop_price") @db.Decimal(18, 4)
+  trailingAmount Decimal?    @map("trailing_amount") @db.Decimal(18, 4)
+  takeProfit     Decimal?    @map("take_profit") @db.Decimal(18, 4)
+  stopLoss       Decimal?    @map("stop_loss") @db.Decimal(18, 4)
+  isOco          Boolean     @default(false) @map("is_oco")
+  owner          TradeOwner  @default(APEX)
+  status         OrderStatus @default(PENDING)
+  isSimulated    Boolean     @default(false) @map("is_simulated")
+  brokerOrderId  String?     @map("broker_order_id")
+  idempotencyKey String?     @unique @map("idempotency_key")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   trades Trade[]
 
   @@index([userId, createdAt])
-  @@index([userId, status])   // For status-filtered order queries
+  @@index([userId, status])
+  @@index([userId, owner])
   @@map("orders")
 }
 
 model Trade {
-  id              String   @id @default(cuid())
-  orderId         String   @map("order_id")
-  fillPrice       Decimal  @map("fill_price") @db.Decimal(18, 4)
-  fillQuantity    Decimal  @map("fill_quantity") @db.Decimal(18, 8)
-  realizedPnl     Decimal? @map("realized_pnl") @db.Decimal(18, 2)
-  aiReasoning     String?  @map("ai_reasoning")
-  marketContext   Json?    @map("market_context")
-  filledAt        DateTime @default(now()) @map("filled_at")
+  id            String     @id @default(cuid())
+  orderId       String     @map("order_id")
+  fillPrice     Decimal    @map("fill_price") @db.Decimal(18, 4)
+  fillQuantity  Decimal    @map("fill_quantity") @db.Decimal(18, 8)
+  realizedPnl   Decimal?   @map("realized_pnl") @db.Decimal(18, 2)
+  aiReasoning   String?    @map("ai_reasoning")
+  marketContext Json?      @map("market_context")
+  owner         TradeOwner @default(APEX)
+  filledAt      DateTime   @default(now()) @map("filled_at")
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
-  @@index([filledAt])         // For time-series analytics queries
+  @@index([filledAt])
+  @@index([owner])
   @@map("trades")
 }
 
@@ -287,7 +345,7 @@ model ActivityFeedEntry {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
-  @@index([userId, eventType]) // For eventType-filtered activity feed queries
+  @@index([userId, eventType])
   @@map("activity_feed_entries")
 }
 
@@ -309,17 +367,103 @@ model AgentState {
 }
 
 model NotificationPreferences {
-  id                  String         @id @default(cuid())
-  userId              String         @unique @map("user_id")
-  digestInterval      DigestInterval @default(DAILY) @map("digest_interval")
-  milestoneAlerts     Boolean        @default(true) @map("milestone_alerts")
-  lossThresholdPct    Decimal?       @map("loss_threshold_pct") @db.Decimal(5, 2)
-  lossAlertsEnabled   Boolean        @default(true) @map("loss_alerts_enabled")
-  pushEnabled         Boolean        @default(true) @map("push_enabled")
-  createdAt           DateTime       @default(now()) @map("created_at")
-  updatedAt           DateTime       @updatedAt @map("updated_at")
+  id                String         @id @default(cuid())
+  userId            String         @unique @map("user_id")
+  digestInterval    DigestInterval @default(DAILY) @map("digest_interval")
+  milestoneAlerts   Boolean        @default(true) @map("milestone_alerts")
+  lossThresholdPct  Decimal?       @map("loss_threshold_pct") @db.Decimal(5, 2)
+  lossAlertsEnabled Boolean        @default(true) @map("loss_alerts_enabled")
+  pushEnabled       Boolean        @default(true) @map("push_enabled")
+  fcmToken          String?        @map("fcm_token")
+  emailEnabled      Boolean        @default(true) @map("email_enabled")
+  whatsappEnabled   Boolean        @default(false) @map("whatsapp_enabled")
+  smsEnabled        Boolean        @default(false) @map("sms_enabled")
+  phoneE164         String?        @map("phone_e164")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notification_preferences")
+}
+
+model Subscription {
+  id            String    @id @default(cuid())
+  userId        String    @unique @map("user_id")
+  plan          PlanTier  @default(FREE)
+  paystackCode  String?   @map("paystack_code")
+  paystackEmail String?   @map("paystack_email")
+  activeUntil   DateTime? @map("active_until")
+  cancelledAt   DateTime? @map("cancelled_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model KYCVerification {
+  id                String    @id @default(cuid())
+  userId            String    @unique @map("user_id")
+  status            KYCStatus @default(PENDING)
+  sumsubApplicantId String?   @map("sumsub_applicant_id")
+  sumsubReviewId    String?   @map("sumsub_review_id")
+  documentType      String?   @map("document_type")
+  countryCode       String?   @map("country_code")
+  rejectionReason   String?   @map("rejection_reason")
+  verifiedAt        DateTime? @map("verified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_verifications")
+}
+
+model TradeLearningData {
+  id                String           @id @default(cuid())
+  userId            String           @map("user_id")
+  symbol            String
+  assetClass        AssetClass       @map("asset_class")
+  side              OrderSide
+  quantity          Decimal          @db.Decimal(18, 8)
+  price             Decimal          @db.Decimal(18, 4)
+  realizedPnl       Decimal?         @map("realized_pnl") @db.Decimal(18, 2)
+  isWin             Boolean?         @map("is_win")
+  technicalSnapshot Json?            @map("technical_snapshot")
+  marketContext     Json?            @map("market_context")
+  source            MarketDataSource @default(SIMULATED)
+  isSimulated       Boolean          @default(true) @map("is_simulated")
+  observationId     String?          @map("observation_id")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  observation MarketObservation? @relation(fields: [observationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([assetClass, isWin])
+  @@index([source, createdAt])
+  @@index([userId, symbol, createdAt])
+  @@map("trade_learning_data")
+}
+
+model MarketObservation {
+  id                String           @id @default(cuid())
+  symbol            String
+  assetClass        AssetClass       @map("asset_class")
+  price             Decimal          @db.Decimal(18, 8)
+  changePct24h      Decimal          @map("change_pct_24h") @db.Decimal(12, 4)
+  volume            Decimal          @db.Decimal(24, 2)
+  technicalSnapshot Json             @map("technical_snapshot")
+  marketContext     Json             @map("market_context")
+  source            MarketDataSource
+  observedAt        DateTime         @default(now()) @map("observed_at")
+
+  tradeLearningLinks TradeLearningData[]
+
+  @@index([symbol, observedAt])
+  @@index([assetClass, observedAt])
+  @@index([source, observedAt])
+  @@map("market_observations")
 }

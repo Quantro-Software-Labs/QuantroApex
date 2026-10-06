@@ -1,8 +1,17 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
+import {
+  listStrategies,
+  findStrategyByIdOrSlug,
+  findStrategyById,
+  upsertUserStrategy,
+  upsertAgentState,
+  incrementStrategyActiveUsers,
+  findUserById,
+  findRiskVault,
+} from '../lib/db/repos.js';
+import type { AssetClass, RiskLevel } from '../lib/db/types.js';
 import { getUserId } from '../plugins/auth.js';
-import { AssetClass, RiskLevel } from '@prisma/client';
 
 const querySchema = z.object({
   assetClass: z.enum(['STOCKS', 'CRYPTO', 'FOREX']).optional(),
@@ -20,24 +29,15 @@ export async function strategyRoutes(app: FastifyInstance) {
 
   app.get('/', async (request, reply) => {
     const parsed = querySchema.safeParse(request.query);
-    const filters: any = { isActive: true };
     const page = parsed.success ? parsed.data.page : 1;
     const limit = parsed.success ? parsed.data.limit : 20;
 
-    if (parsed.success) {
-      if (parsed.data.assetClass) filters.assetClass = parsed.data.assetClass;
-      if (parsed.data.riskLevel) filters.riskLevel = parsed.data.riskLevel;
-    }
-
-    const [strategies, total] = await Promise.all([
-      prisma.strategy.findMany({
-        where: filters,
-        orderBy: { activeUserCount: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      prisma.strategy.count({ where: filters }),
-    ]);
+    const { strategies, total } = await listStrategies({
+      assetClass: parsed.success ? parsed.data.assetClass : undefined,
+      riskLevel: parsed.success ? parsed.data.riskLevel : undefined,
+      skip: (page - 1) * limit,
+      take: limit,
+    });
 
     return reply.send({
       strategies,
@@ -48,47 +48,38 @@ export async function strategyRoutes(app: FastifyInstance) {
   app.get('/recommended', async (request, reply) => {
     const userId = getUserId(request);
 
-    // Select only the fields needed — avoids over-fetching profile/full riskVault
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        experienceLevel: true,
-        riskVault: {
-          select: { stocksEnabled: true, cryptoEnabled: true, forexEnabled: true },
-        },
-      },
-    });
+    const [user, riskVault] = await Promise.all([
+      findUserById(userId),
+      findRiskVault(userId),
+    ]);
 
-    const riskVault = user?.riskVault;
     const allowedAssetClasses: AssetClass[] = [];
-    if (riskVault?.stocksEnabled ?? true) allowedAssetClasses.push(AssetClass.STOCKS);
-    if (riskVault?.cryptoEnabled) allowedAssetClasses.push(AssetClass.CRYPTO);
-    if (riskVault?.forexEnabled) allowedAssetClasses.push(AssetClass.FOREX);
+    if (riskVault?.stocksEnabled ?? true) allowedAssetClasses.push('STOCKS');
+    if (riskVault?.cryptoEnabled) allowedAssetClasses.push('CRYPTO');
+    if (riskVault?.forexEnabled) allowedAssetClasses.push('FOREX');
 
-    let targetRisk: RiskLevel = RiskLevel.GROWTH;
+    let targetRisk: RiskLevel = 'GROWTH';
     if (user?.experienceLevel === 'NEWCOMER') {
-      targetRisk = RiskLevel.CONSERVATIVE;
+      targetRisk = 'CONSERVATIVE';
     } else if (user?.experienceLevel === 'PROFESSIONAL') {
-      targetRisk = RiskLevel.AGGRESSIVE;
+      targetRisk = 'AGGRESSIVE';
     }
 
     const effectiveAssetClasses =
-      allowedAssetClasses.length > 0 ? allowedAssetClasses : [AssetClass.STOCKS];
+      allowedAssetClasses.length > 0 ? allowedAssetClasses : (['STOCKS'] as AssetClass[]);
 
-    // Single query: fetch target risk first, then fill remainder with any other active strategies
-    const recommended = await prisma.strategy.findMany({
-      where: {
-        isActive: true,
-        assetClass: { in: effectiveAssetClasses },
-      },
-      orderBy: [{ riskLevel: 'asc' }, { activeUserCount: 'desc' }],
-      take: 6, // fetch extra to allow client-side risk preference filtering
-    });
+    const { strategies: recommended } = await listStrategies({ take: 20 });
+    const filtered = recommended
+      .filter((s) => effectiveAssetClasses.includes(s.assetClass))
+      .sort((a, b) => {
+        if (a.riskLevel !== b.riskLevel) return a.riskLevel.localeCompare(b.riskLevel);
+        return b.activeUserCount - a.activeUserCount;
+      })
+      .slice(0, 6);
 
-    // Sort preferred risk level first
     const sorted = [
-      ...recommended.filter((s) => s.riskLevel === targetRisk),
-      ...recommended.filter((s) => s.riskLevel !== targetRisk),
+      ...filtered.filter((s) => s.riskLevel === targetRisk),
+      ...filtered.filter((s) => s.riskLevel !== targetRisk),
     ].slice(0, 3);
 
     return reply.send({ recommended: sorted });
@@ -97,11 +88,7 @@ export async function strategyRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const strategy = await prisma.strategy.findFirst({
-      where: {
-        OR: [{ id }, { slug: id }],
-      },
-    });
+    const strategy = await findStrategyByIdOrSlug(id);
 
     if (!strategy) {
       return reply.status(404).send({ error: 'NotFound', message: 'Strategy not found', details: {} });
@@ -123,27 +110,17 @@ export async function strategyRoutes(app: FastifyInstance) {
     const userId = getUserId(request);
     const { strategyId } = parsed.data;
 
-    const strategy = await prisma.strategy.findUnique({ where: { id: strategyId } });
+    const strategy = await findStrategyById(strategyId);
     if (!strategy) {
       return reply.status(404).send({ error: 'NotFound', message: 'Strategy not found', details: {} });
     }
 
-    const [userStrategy, agentState] = await prisma.$transaction([
-      prisma.userStrategy.upsert({
-        where: { userId_strategyId: { userId, strategyId } },
-        create: { userId, strategyId, isActive: true },
-        update: { isActive: true },
-      }),
-      prisma.agentState.upsert({
-        where: { userId },
-        create: { userId, currentStrategyId: strategyId, phase: 'SEED' },
-        update: { currentStrategyId: strategyId },
-      }),
-      prisma.strategy.update({
-        where: { id: strategyId },
-        data: { activeUserCount: { increment: 1 } },
-      }),
-    ]);
+    const userStrategy = await upsertUserStrategy(userId, strategyId);
+    const agentState = await upsertAgentState(userId, {
+      currentStrategyId: strategyId,
+      phase: 'SEED',
+    });
+    await incrementStrategyActiveUsers(strategyId);
 
     return reply.send({
       message: 'Strategy selected successfully',

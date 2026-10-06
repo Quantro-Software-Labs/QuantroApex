@@ -1,204 +1,72 @@
-# ⚡ QuantroApex V1
+# QuantroApex — Autonomous AI Trading System
 
-> **Autonomous AI Trading Assistant & Risk Governance Platform**
-> Built with *Quiet Confidence* design principles for disciplined algorithmic capital growth.
-
----
-
-## 🛡️ Quiet Confidence Design Philosophy
-
-QuantroApex is engineered around five core visual and interaction principles:
-1. **Composed Numbers & Data**: Muted tones (slate, emerald, crimson) instead of aggressive flashing colors. Financial values are displayed with tabular monospaced numbers.
-2. **Deterministic Control**: The user defines hard boundary constraints (Risk Vault) that the autonomous agent can *never* override.
-3. **Transparent Reasoning**: Every order, position modification, or advisory signal presents plain-language AI rationale.
-4. **Advisory Mode Flexibility**: Switch seamlessly between **Autonomous Execution** (hands-free) and **Advisory Mode** (swipe-to-approve signal feed).
-5. **Fail-Safe Reliability**: Built-in paper trading simulation, real-time WebSocket activity feeds, and single-tap Emergency Stop controls.
+QuantroApex is an autonomous multi-asset algorithmic trading, paper simulation, manual trading, and institutional risk-vault platform developed by **Quantro Software Labs**.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏛️ Architecture & Stack Overview
 
-QuantroApex is structured as a modern monorepo separating API services and mobile clients:
+QuantroApex is built as a modular micro-service architecture:
 
+```mermaid
+graph TD
+    ClientWeb["Trader Web (Next.js 16 / React Query)"] --> APIGateway["API Gateway (Fastify / Prisma ORM)"]
+    ClientMobile["Mobile App (Flutter / Dart)"] --> APIGateway
+    APIGateway --> Database[("PostgreSQL / Supabase")]
+    APIGateway --> AIService["AI Service (FastAPI / PyTorch / RL)"]
+    APIGateway --> DataPipeline["Data Pipeline (Python / WebSockets / Finnhub)"]
+    APIGateway --> Brokers["Brokers (Alpaca Markets / OANDA / CCXT)"]
 ```
-QuantroApex/
-├── apps/
-│   └── mobile/                     # Flutter 3.27 Mobile App (iOS / Android / Linux)
-│       ├── lib/
-│       │   ├── core/               # ApiService, Auth, Providers (State Management)
-│       │   ├── screens/            # Auth, Onboarding, Risk Vault, Marketplace, Dashboard, Advisory, Analytics
-│       │   └── widgets/            # Quiet Confidence Design System UI Components
-│       └── pubspec.yaml
-├── services/
-│   └── api-gateway/                # Fastify + TypeScript API Server
-│       ├── prisma/                 # Database Schema & PostgreSQL Migrations
-│       ├── src/
-│       │   ├── lib/                # Risk Enforcer, Execution Engine, Alpaca Broker Client, EventBus
-│       │   ├── plugins/            # JWT Auth, Fastify Decorators
-│       │   └── routes/             # Auth, Onboarding, Risk Vault, Strategies, Execution, Analytics, Notifications
-│       ├── Dockerfile              # Multi-Stage Production Container Image
-│       └── package.json
-├── docker-compose.yml              # Local PostgreSQL 16 Infrastructure
-└── README.md
-```
+
+### Stack Summary
+- **Apps**:
+  - `apps/trader-web`: Modern Next.js 16 desktop interface (TypeScript, TailwindCSS, React Query).
+  - `apps/mobile`: Flutter cross-platform client (iOS, Android, Web).
+- **Services**:
+  - `services/api-gateway`: Fastify Node.js server, Prisma ORM, Firebase Auth, Sumsub KYC, Paystack Webhooks, Risk Vault.
+  - `services/data-pipeline`: Python real-time WebSocket market streaming engine & paper trading simulator (port `:8002`).
+  - `services/ai-service`: Python FastAPI strategy inference & sentiment engine (port `:8001`).
+- **Database**: PostgreSQL (Prisma ORM) with Supabase connection pooling.
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start (Local Setup)
 
-### Prerequisites
-- **Node.js**: `v20.0.0` or later
-- **Docker & Docker Compose**: For PostgreSQL database
-- **Flutter**: `v3.27.0` or later (for mobile client)
-- **Linux Desktop Build Dependencies** (Linux desktop target only):
-  ```bash
-  sudo apt-get update && sudo apt-get install -y libsecret-1-dev libjsoncpp-dev
-  ```
+### 1. Prerequisites
+- **Node.js**: `>= 20.0.0`
+- **pnpm / npm**: `npm >= 10`
+- **Python**: `>= 3.11`
+- **Flutter**: `>= 3.22` (for mobile app)
 
-### 1. Database Infrastructure Setup
-Start the local PostgreSQL container:
+### 2. Environment Setup
+Copy the environment template:
 ```bash
-docker-compose up -d
-```
-*Note: If PostgreSQL is already running natively on port 5433 on your system, port binding may report `address already in use`. In this case, your database is already active — you can skip this step and proceed directly to Step 2.*
-
-### 2. API Gateway Setup
-Navigate to the API gateway and configure environment:
-```bash
-cd services/api-gateway
-cp ../../.env.example .env
+cp .env.example .env
 ```
 
-Ensure your `.env` contains your PostgreSQL credentials and JWT secrets (`openssl rand -hex 32`).
-
-Run database migrations & start dev server:
+### 3. Install & Sync Database
 ```bash
-npm install
-npx prisma migrate deploy
-npm run dev
+# Install dependencies and sync database schema
+npm run setup
 ```
-The API Gateway starts on `http://localhost:3000`.
 
-### 3. Flutter Mobile Client Setup
-In a new terminal window:
+### 4. Running Microservices
+- **API Gateway**: `npm run dev` (starts Fastify on `http://localhost:3000`)
+- **Trader Web**: `npm run trader:dev` (starts Next.js on `http://localhost:3001`)
+- **AI Service**: `npm run ai:dev` (starts FastAPI on `http://localhost:8001`)
+- **Data Pipeline**: `npm run data:api` (starts Python service on `http://localhost:8002`)
+
+### 5. Run Test Suite
 ```bash
-cd apps/mobile
-flutter pub get
-flutter run -d linux # or -d chrome / android / ios
+npm test
 ```
 
 ---
 
-## 📡 API Endpoint Directory
+## 🔒 Security & Risk Vault
 
-### Authentication & User Profile
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `POST` | `/auth/register` | Register new account & issue JWT tokens | No |
-| `POST` | `/auth/login` | Authenticate credentials (rate limited: 10/min) | No |
-| `POST` | `/auth/refresh` | Rotate access token using refresh token | No |
-| `POST` | `/auth/logout` | Revoke user refresh tokens | Yes |
-| `GET` | `/auth/me` | Fetch authenticated user profile & agent state | Yes |
-
-### Onboarding & Setup
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/onboarding/progress` | Fetch current onboarding step & progress | Yes |
-| `POST` | `/onboarding/path` | Set onboarding path (`NEWCOMER` / `EXPRESS`) | Yes |
-| `POST` | `/onboarding/step` | Update step index & step state | Yes |
-| `POST` | `/onboarding/complete` | Finalise onboarding & set Risk Vault parameters | Yes |
-
-### Risk Vault Governance
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/risk-vault` | Fetch active Risk Vault parameters & emergency status | Yes |
-| `PUT` | `/risk-vault` | Update daily loss limits, drawdown, exposure % | Yes |
-| `POST` | `/risk-vault/emergency-stop` | **Halt all trading immediately** | Yes |
-| `POST` | `/risk-vault/resume` | Resume trading after emergency stop | Yes |
-
-### Strategy Marketplace
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/strategies` | Browse active strategies (paginated) | Yes |
-| `GET` | `/strategies/recommended` | Fetch personalized AI strategy recommendations | Yes |
-| `GET` | `/strategies/:id` | Fetch strategy detail by ID or slug | Yes |
-| `POST` | `/strategies/select` | Attach strategy to active trading agent | Yes |
-
-### Execution & Simulation Engine
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `POST` | `/execution/order` | Submit market/limit order (evaluated by Risk Enforcer) | Yes |
-| `GET` | `/execution/orders` | Fetch user order history (paginated) | Yes |
-| `GET` | `/execution/positions` | Fetch active portfolio positions & cash balance | Yes |
-| `POST` | `/execution/signal` | Execute strategy signal | Yes |
-| `GET` | `/simulation/summary` | Fetch paper trading portfolio summary | Yes |
-| `POST` | `/simulation/reset` | Reset paper account to $100,000 initial capital | Yes |
-| `POST` | `/simulation/generate-ticks` | Simulate live market price movement | Yes |
-
-### Activity Feed & Real-Time Stream
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/activity-feed` | Fetch activity log (paginated) | Yes |
-| `WS` | `/activity-feed/ws/events?token=<jwt>` | **Real-time WebSocket event stream** | Yes |
-
-### Analytics & Performance
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/analytics/metrics` | Fetch win rate, profit factor, equity, trade count | Yes |
-| `GET` | `/analytics/equity-curve` | Fetch portfolio time-series equity points | Yes |
-| `GET` | `/analytics/trade-history` | Fetch fill logs with AI reasoning | Yes |
-
-### Notifications & Advisory Mode
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/notifications/preferences` | Fetch notification & advisory alert settings | Yes |
-| `PUT` | `/notifications/preferences` | Update push alert settings | Yes |
-| `POST` | `/notifications/fcm-token` | Register FCM push device token | Yes |
-| `GET` | `/notifications/advisory-feed` | Fetch pending Advisory Mode trade signals | Yes |
-| `POST` | `/notifications/advisory/respond` | Approve or reject pending signal | Yes |
-
-### Monitoring & Operations
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/health` | Basic service ping | No |
-| `GET` | `/health/live` | Liveness probe (container uptime) | No |
-| `GET` | `/health/ready` | Readiness probe (PostgreSQL database check) | No |
-| `GET` | `/health/detailed` | Detailed subsystem status, DB latency & memory usage | No |
-
----
-
-## 🧪 Verification & Testing
-
-Run the full API Gateway test suite (includes 41 unit, integration, and E2E journey tests):
-```bash
-npm test --workspace=@quantroapex/api-gateway
-```
-
-Run Flutter static analysis:
-```bash
-cd apps/mobile && flutter analyze
-```
-
----
-
-## 📦 Container Production Deployment
-
-Build the multi-stage Docker container image:
-```bash
-docker build -t quantroapex-api-gateway ./services/api-gateway
-```
-
-Run the container:
-```bash
-docker run -d \
-  --name quantroapex-gateway \
-  -p 3000:3000 \
-  --env-file .env \
-  quantroapex-api-gateway
-```
-
----
-
-## 📄 License & System Status
-- **Status**: V1 Production-Ready (100% Sprints Completed & Verified)
-- **Built by**: QuantroApex Autonomous Engineering Team
+QuantroApex enforces multi-tier server-side risk controls prior to order execution:
+- **Daily Loss Limit**: Automatic pause when cumulative daily losses breach limit.
+- **Max Drawdown Protection**: Fail-closed Emergency Stop triggered dynamically on post-fill equity drawdown.
+- **Per-Trade Exposure**: Restricts maximum position size per trade.
+- **KYC & Subscription Gating**: Live mode orders require verified identity (Sumsub) and active subscription (Paystack).

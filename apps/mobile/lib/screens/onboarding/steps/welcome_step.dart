@@ -14,9 +14,9 @@ class WelcomeStep extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: AppSpacing.space4),
-          const StatusBadge(label: 'Autonomous Intelligence', color: AppColors.accent),
+          const StatusBadge(label: 'Autonomous Intelligence', color: Color(0xFF3B82F6)),
           const SizedBox(height: AppSpacing.space4),
-          Text('Welcome to QuantroApex', style: AppTypography.h1(color: AppColors.primary)),
+          Text('Welcome to QuantroApex', style: AppTypography.h1(color: AppColors.white)),
           const SizedBox(height: AppSpacing.space4),
           ApexCard(
             padding: AppSpacing.space4,
@@ -25,18 +25,18 @@ class WelcomeStep extends StatelessWidget {
               children: [
                 Text(
                   '"QuantroApex is an AI that trades on your behalf, learns from every trade, and gets smarter over time. You set the boundaries. It handles the rest."',
-                  style: AppTypography.body(color: AppColors.primary),
+                  style: AppTypography.body(color: AppColors.white),
                 ),
                 const SizedBox(height: AppSpacing.space3),
                 Text(
                   'No fine-print surprises. No manual chart monitoring required.',
-                  style: AppTypography.secondary(color: AppColors.muted),
+                  style: AppTypography.secondary(color: const Color(0xFF94A3B8)),
                 ),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.space5),
-          Text('What happens next:', style: AppTypography.h3(color: AppColors.primary)),
+          Text('What happens next:', style: AppTypography.h3(color: AppColors.white)),
           const SizedBox(height: AppSpacing.space3),
           _FeatureBullet(
             number: '1',
@@ -81,13 +81,13 @@ class _FeatureBullet extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: const BoxDecoration(
-            color: AppColors.surface,
+            color: Color(0xFF1E293B),
             shape: BoxShape.circle,
           ),
           child: Center(
             child: Text(
               number,
-              style: AppTypography.caption(color: AppColors.accent),
+              style: AppTypography.caption(color: const Color(0xFF3B82F6)),
             ),
           ),
         ),
@@ -96,9 +96,9 @@ class _FeatureBullet extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: AppTypography.h3(color: AppColors.primary)),
+              Text(title, style: AppTypography.h3(color: AppColors.white)),
               const SizedBox(height: AppSpacing.space1),
-              Text(subtitle, style: AppTypography.secondary(color: AppColors.muted)),
+              Text(subtitle, style: AppTypography.secondary(color: const Color(0xFF94A3B8))),
             ],
           ),
         ),

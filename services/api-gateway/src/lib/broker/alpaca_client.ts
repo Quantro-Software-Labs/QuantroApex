@@ -16,14 +16,16 @@ export class AlpacaClient implements IBrokerClient {
   private mockCash = 100000;
   private mockPositions: Map<string, { qty: number; avgPrice: number }> = new Map();
 
-  constructor() {
-    // Use centralised config — handles env var name normalisation
-    this.apiKey = config.alpaca.apiKey || undefined;
-    this.apiSecret = config.alpaca.apiSecret || undefined;
-    this.baseUrl = config.alpaca.baseUrl;
+  constructor(opts?: { apiKey?: string; apiSecret?: string; baseUrl?: string }) {
+    this.apiKey = opts?.apiKey || config.alpaca.apiKey || undefined;
+    this.apiSecret = opts?.apiSecret || config.alpaca.apiSecret || undefined;
+    this.baseUrl = opts?.baseUrl || config.alpaca.baseUrl || 'https://paper-api.alpaca.markets/v2';
   }
 
   private isConfigured(): boolean {
+    if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+      return false;
+    }
     return !!(this.apiKey && this.apiSecret);
   }
 
@@ -95,8 +97,8 @@ export class AlpacaClient implements IBrokerClient {
 
   async createOrder(params: CreateOrderParams): Promise<BrokerOrder> {
     if (!this.isConfigured()) {
-      // Mock instant fill for sandbox/testing
-      const fillPrice = params.limitPrice || 150.0;
+      // Mock instant fill for sandbox/testing — prefer limit, then live estimated, then seed
+      const fillPrice = params.limitPrice || params.estimatedPrice || 100.0;
       const orderValue = fillPrice * params.qty;
 
       if (params.side === 'BUY') {
@@ -154,6 +156,26 @@ export class AlpacaClient implements IBrokerClient {
     }
 
     const data = (await res.json()) as any;
+    let status: 'SUBMITTED' | 'FILLED' | 'CANCELLED' | 'REJECTED' =
+      data.status === 'filled' ? 'FILLED' : 'SUBMITTED';
+    let fillPrice = data.filled_avg_price ? parseFloat(data.filled_avg_price) : undefined;
+    let filledAt = data.filled_at ? new Date(data.filled_at) : undefined;
+
+    // Fast-check: If Alpaca accepted/submitted market order, wait 300ms and check status
+    if (status === 'SUBMITTED' && data.id) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      try {
+        const fetchedOrder = await this.getOrder(data.id);
+        if (fetchedOrder.status === 'FILLED') {
+          status = 'FILLED';
+          fillPrice = fetchedOrder.fillPrice || fillPrice;
+          filledAt = fetchedOrder.filledAt || filledAt;
+        }
+      } catch (_) {
+        // Ignore fast-check error
+      }
+    }
+
     return {
       id: data.id,
       clientOrderId: data.client_order_id,
@@ -162,7 +184,42 @@ export class AlpacaClient implements IBrokerClient {
       qty: parseFloat(data.qty),
       type: params.type,
       limitPrice: data.limit_price ? parseFloat(data.limit_price) : undefined,
-      status: data.status === 'filled' ? 'FILLED' : 'SUBMITTED',
+      status,
+      fillPrice,
+      filledAt,
+    };
+  }
+
+  async getOrder(orderId: string): Promise<BrokerOrder> {
+    if (!this.isConfigured()) {
+      return {
+        id: orderId,
+        symbol: 'MOCK',
+        side: 'BUY',
+        qty: 1,
+        type: 'MARKET',
+        status: 'FILLED',
+        fillPrice: 100.0,
+        filledAt: new Date(),
+      };
+    }
+
+    const res = await fetch(`${this.baseUrl}/orders/${orderId}`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`Alpaca getOrder error: ${res.statusText}`);
+    }
+    const data = (await res.json()) as any;
+    return {
+      id: data.id,
+      clientOrderId: data.client_order_id,
+      symbol: data.symbol,
+      side: data.side.toUpperCase() as 'BUY' | 'SELL',
+      qty: parseFloat(data.qty),
+      type: data.type.toUpperCase() as 'MARKET' | 'LIMIT',
+      limitPrice: data.limit_price ? parseFloat(data.limit_price) : undefined,
+      status: data.status === 'filled' ? 'FILLED' : data.status === 'canceled' ? 'CANCELLED' : 'SUBMITTED',
       fillPrice: data.filled_avg_price ? parseFloat(data.filled_avg_price) : undefined,
       filledAt: data.filled_at ? new Date(data.filled_at) : undefined,
     };

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Strategy Marketplace Endpoints', () => {
   let app: FastifyInstance;
@@ -17,17 +18,8 @@ describe('Strategy Marketplace Endpoints', () => {
       where: { email: { endsWith: '@strategytest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'user@strategytest.com',
-        password: 'Password123!',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
+    const session = await registerTestUser(app, 'user@strategytest.com');
+    accessToken = session.accessToken;
   });
 
   it('should list all active strategies', async () => {

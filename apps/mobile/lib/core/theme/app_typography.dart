@@ -50,4 +50,16 @@ abstract final class AppTypography {
         height: 1.5,
         color: color,
       );
+
+  static TextStyle monoNumber({
+    double fontSize = 16,
+    FontWeight fontWeight = FontWeight.w600,
+    Color? color,
+  }) =>
+      GoogleFonts.jetBrainsMono(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        height: 1.2,
+        color: color,
+      );
 }

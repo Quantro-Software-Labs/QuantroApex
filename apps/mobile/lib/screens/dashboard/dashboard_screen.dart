@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/components.dart';
+import '../../widgets/demo_capital_dialog.dart';
 import '../../widgets/mode_toggle_badge.dart';
 import '../../widgets/quantro_logo.dart';
 import '../analytics/analytics_screen.dart';
@@ -86,8 +87,8 @@ class DashboardScreen extends StatelessWidget {
                         children: [
                           Text('Apex Autonomous Agent', style: AppTypography.h3(color: AppColors.primary)),
                           StatusBadge(
-                            label: isEmergencyStopped ? 'HALTED' : agentState.phase,
-                            color: isEmergencyStopped ? AppColors.danger : AppColors.accent,
+                            label: isEmergencyStopped ? 'Paused' : agentState.phase,
+                            color: isEmergencyStopped ? AppColors.warning : AppColors.accent,
                           ),
                         ],
                       ),
@@ -115,11 +116,46 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.space4),
 
-                // Portfolio Metric
-                MetricTile(
-                  label: 'Simulated Equity',
-                  value: '\$${simulationProvider.equity.toStringAsFixed(2)}',
-                  valueColor: simulationProvider.realizedPnl >= 0 ? AppColors.success : AppColors.danger,
+                // Portfolio Metric & Demo Capital Controls
+                ApexCard(
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                simulationProvider.activeMode == 'LIVE' ? 'Live Broker Equity' : 'Simulated Equity',
+                                style: AppTypography.caption(color: AppColors.muted),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '\$${simulationProvider.equity.toStringAsFixed(2)}',
+                                style: AppTypography.h1(
+                                  color: simulationProvider.realizedPnl >= 0 ? AppColors.success : AppColors.danger,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (simulationProvider.activeMode != 'LIVE')
+                            ElevatedButton.icon(
+                              onPressed: () => DemoCapitalDialog.show(context),
+                              icon: const Icon(Icons.tune, size: 16),
+                              label: const Text('Set Demo Capital'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E293B),
+                                foregroundColor: const Color(0xFF3B82F6),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.space4),
 

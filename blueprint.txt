@@ -1,0 +1,628 @@
+QUANTRO SOFTWARE LABS
+QuantroApex
+Autonomous AI Trading System
+"Trade smarter. Let it learn."
+Product Blueprint
+Confidential — Internal Document
+Version 1.0  |  2026
+Table of Contents
+1. Executive Summary
+QuantroApex is an autonomous AI trading system built for individual retail traders.
+It learns from every trade, evolves its own strategies, and operates around the clock — requiring nothing from the user except a capital amount and a single tap to start.
+Built under Quantro Software Labs, QuantroApex delivers institutional-grade intelligence through a consumer-grade experience.
+QuantroApex serves two types of users simultaneously:
+Hands-off traders — who set a capital amount, choose a starting strategy, and let the AI handle everything autonomously.
+Active traders — who prefer manual control but want AI-powered signals, insights, and advisory support.
+The system is anchored by a self-learning engine that grows smarter with every trade across every user, powered by a two-layer intelligence architecture — a Global Brain shared across all users, and a Personal Agent unique to each individual.
+2. Company Overview
+Quantro Software Labs
+Quantro Software Labs is a software and AI company dedicated to building innovative digital solutions. The company develops web applications, AI-powered products, automation tools, and custom software that help businesses, organisations, and individuals solve real-world problems and grow through technology.
+QuantroApex is the company's flagship AI product — a direct embodiment of its mission to deliver intelligent, practical technology with real-world impact.
+3. Product Overview
+3.1 Product Identity
+Attribute
+Detail
+Product Name
+QuantroApex
+Parent Brand
+Quantro Software Labs
+Product Type
+Autonomous AI Trading System
+Target Market
+Individual Retail Traders
+Asset Classes
+Cryptocurrency, Stocks, Forex (Multi-asset)
+Platform
+Mobile-first (iOS & Android), Web (supplementary)
+Core Tagline
+"Trade smarter. Let it learn."
+3.2 Product Positioning
+QuantroApex positions itself as the only genuinely self-learning, autonomous, multi-asset trading system built for retail users with a consumer-grade experience. It occupies a gap that existing products have not filled: too technical, crypto-only, or not truly autonomous.
+3.3 Tagline Options
+"Trade smarter. Let it learn."
+"Your capital. Our intelligence."
+"The market never sleeps. Neither does Apex."
+"Set it. Start it. Watch it evolve."
+4. Design Philosophy — Quiet Confidence
+Core Principle: QuantroApex never needs to prove itself. It just performs.
+Every design decision — visual, interaction, language — should feel like a system that is completely in control. Not cold, not robotic, but composed.
+4.1 The Five Principles
+1. Calm over Flashy
+No aggressive animations, urgent alerts for normal activity, or gamification tricks. The interface stays composed even when the market is not. Users should feel steadier just by looking at it.
+2. Information on Demand
+Surface what matters right now, and let deeper information live one tap away. The dashboard should feel spacious — not like a Bloomberg terminal.
+3. Speak Human
+Every AI decision, every alert, every label is written in plain language. Smart does not mean complicated. Not "RSI divergence detected on 4H timeframe" but "Apex noticed a momentum shift and adjusted positioning."
+4. Trust Through Transparency
+The system earns trust by showing its work quietly — not defensively. The AI reasoning feed, simulation toggle, and risk vault are not disclaimers; they are confidence builders.
+5. Always Available, Never Intrusive
+Features like paper trading, advisory mode, and performance history are permanently accessible but never pushed. The product respects that different users are at different comfort levels.
+4.2 Quiet Confidence in Practice
+Situation
+Wrong Approach
+Quiet Confidence
+Trade executed
+Big green flash, confetti
+Soft entry in activity feed
+Loss on a trade
+Red alert, warning banner
+Calm log entry, AI context
+New strategy available
+Pop-up notification
+Badge in the marketplace
+Simulation mode active
+"SIMULATION ACTIVE" banner
+Subtle muted corner indicator
+Strong performance week
+"Portfolio is CRUSHING IT!"
+Clean analytics, numbers speak
+5. User Modes
+5.1 Autopilot Mode
+The core product. The user sets a capital amount, picks an initial strategy from curated recommendations, and clicks Start. Apex executes, observes outcomes, refines its logic, and eventually graduates beyond the seeded strategy into fully autonomous positioning decisions.
+Minimal user input required after setup
+AI handles execution, learning, and strategy evolution
+Risk Vault boundaries are always respected
+User can monitor via the Live Activity Feed at any time
+5.2 Advisory Mode
+For users who want control but need intelligence. The AI surfaces real-time insights, entry and exit signals, risk alerts, and pattern analysis. The user makes the final trading decisions.
+AI-generated signals with plain-English reasoning
+Watchlist intelligence — Apex monitors chosen assets
+Market context summaries — not news, but Apex's own read
+Action cards — suggested moves the user can act on or ignore
+Both modes feed data back into the same learning engine, compounding the system's intelligence over time.
+5.3 Live / Simulation Toggle
+A quiet, permanent toggle — always visible near capital settings. Users can switch between live trading and paper trading (simulation) at any time. This is not just an onboarding tool; it is a permanent product feature for:
+New users building confidence before committing real capital
+Experienced users testing a new strategy before going live
+Users who need a break from live trading without losing AI continuity
+Simulation mode mirrors live conditions precisely — slippage, latency, spreads — to ensure simulation performance is a reliable indicator of live performance. A subtle muted indicator in the corner of the screen distinguishes simulation from live. Simulation trades still feed the Global Brain learning engine.
+6. Onboarding
+6.1 Onboarding Philosophy
+By the time a user starts Apex, they genuinely understand what they are handing control to. No fine-print surprises. No features-list sales pitch. The onboarding feels like a briefing, not a signup flow.
+6.2 Experience Level Selection
+The very first screen — before any configuration — presents two paths:
+I'm new to this
+I'm an experienced trader
+Full onboarding — all nine steps
+Express setup — four steps
+Plain-English explanations at every step
+No explanations, respects existing knowledge
+Behavioural risk quiz
+Direct parameter entry
+Strategy recommendation walkthrough
+Option to skip to Autonomous mode directly
+Guided simulation suggestion
+Standard capital and notification setup
+Experience level can be changed at any time in Settings under "My Apex Profile." The system subtly suggests a level upgrade after consistent platform use — once, never repeated.
+6.3 Full Onboarding — Nine Steps
+Step 1 — Welcome to QuantroApex
+A single, honest statement of what the product is. No features list, no sales language.
+"QuantroApex is an AI that trades on your behalf, learns from every trade, and gets smarter over time. You set the boundaries. It handles the rest."
+Step 2 — How Apex Learns
+A brief visual walkthrough of the two-layer brain in plain English. The collective data contribution toggle is introduced here with a clear explanation — not buried in settings.
+Step 3 — Risk Vault Setup
+Before anything else is configured, users set their hard limits. This ordering is intentional — it signals that their protection comes first. Each parameter is explained in one sentence with no jargon.
+Daily loss limit
+Maximum drawdown
+Asset classes permitted
+Step 4 — Risk Profile Quiz
+Four to five behavioural questions — not generic finance questions. Designed to understand how the user actually thinks about risk.
+"If Apex had a losing week, what would you do?" — Review / Trust and wait / Stop immediately
+"How involved do you want to be?" — Fully hands-off / Occasional check-ins / Daily updates
+Step 5 — Choose Your Starting Strategy
+Three strategies recommended based on the risk profile. Each card includes a plain-English description, risk level, asset class, backtested performance trend, and user count. A simulation suggestion is quietly offered — never pushed.
+Step 6 — Set Your Capital
+The amount Apex trades with. A soft recommendation is shown based on risk profile — not prescriptive, simply helpful.
+Step 7 — Notification Preferences
+Digest interval, milestone alerts, and loss threshold. Defaults are pre-filled from the risk profile quiz. Users confirm or adjust.
+Step 8 — Paper Trading Prompt
+One calm screen before going live. Two equal-weight buttons — "Start in Simulation" and "Go Live." No pressure in either direction.
+Step 9 — You're Set
+"Apex is running. We'll keep you updated."
+No confetti. No excessive enthusiasm. Clean, calm, confident.
+6.4 Express Setup — Professionals
+Four steps only. No explanations unless requested.
+Risk Vault — mandatory regardless of experience level, framed as parameter setting
+Strategy selection or skip to full Autonomous mode
+Capital amount
+Notification preferences
+The collective data contribution toggle still appears briefly in Express Setup — professionals especially will want transparency on data usage.
+7. Experience Levels
+Experience level is a living profile attribute — not a one-time classification. It shapes the UI density and information depth throughout the product. Adjustable at any time in Settings under "My Apex Profile."
+Feature
+Newcomer
+Intermediate
+Professional
+Dashboard layout
+Spacious, minimal
+Balanced
+Dense, data-rich
+AI reasoning feed
+Full plain-English
+Summarised
+Technical detail available
+Strategy cards
+Full descriptions
+Medium detail
+Stats-forward
+Tooltips
+Always visible
+On demand
+Off by default
+Performance screen
+Simplified metrics
+Standard
+Full data suite
+Advisory feed
+Guided suggestions
+Standard signals
+Raw signal data
+Signal confidence
+Not shown
+Low/Moderate/High
+Percentage score
+8. Core Features & Screens
+8.1 Home Dashboard
+The cockpit. Users see this every time they open the app. Designed to feel like a calm control room — not a casino floor.
+What lives here:
+Portfolio value — large, clean, front and centre
+Today's movement — a single subtle number, no colour hysteria
+Apex Status — one quiet indicator: "Active · 3 trades today" or "Monitoring · No positions open"
+Quick Activity Snapshot — last three agent actions, soft and minimal
+Live / Simulation toggle — small, always visible, never highlighted
+One primary contextual action button — "Start Apex" or "View Activity"
+What does not live here:
+Market news, promotional banners, performance percentages, or unsolicited graphs
+8.2 Apex Agent Screen
+The most unique screen in the product. A direct window into the AI's brain. No competitor does this well.
+What lives here:
+Current Strategy — one-line description of what Apex is running
+Agent Phase Indicator — Seed · Learning · Adapting · Autonomous — quiet, engaging, not gamified
+Live Activity Feed — scrollable log of every action with plain-English reasoning
+Last Trade Card — asset, direction, outcome, one-sentence AI explanation
+Confidence Indicator — Low / Moderate / High (not a raw percentage for standard users)
+Activity feed entry examples:
+"Reduced ETH position · Volatility spike detected ahead of Fed announcement"
+"Opened AAPL position · Strong momentum pattern forming on daily close"
+"Paused trading · Unusual market conditions detected — capital protected"
+8.3 Strategy Marketplace
+Where users start and explore. Curated strategies with honest, plain-English presentation.
+Structure:
+Recommended for You — top 3 cards based on risk profile, shown first
+Browse by Asset Class — Crypto, Stocks, Forex, Multi-asset
+Browse by Style — Conservative, Growth, Aggressive, Experimental
+Each strategy card shows:
+Strategy name and one-line plain-English description
+Asset class badge and risk level indicator
+Backtested performance trend — simple line, honest context
+Active user count — quiet social proof
+"Start with this" action button
+A Strategy Builder feature is planned for a future Pro tier — allowing experienced users to construct custom strategies — but is not part of the initial release.
+8.4 Performance Screen
+Let the numbers speak. No motivational copy, no benchmark comparisons the user did not ask for.
+Equity curve — clean line chart, full history
+Key metrics — Total return, Win rate, Best trade, Worst trade, Average hold time
+Trade history — filterable log, each trade expandable with AI reasoning
+Agent Evolution Timeline — visual showing phase transitions over time
+Simulation vs Live toggle — compare paper and live performance side by side
+8.5 Risk Vault
+The most controlled and serious screen in the product. Where trust is formally established. Copy here is the most precise in the entire product — every label unambiguous.
+Daily Loss Limit — the one number Apex will never breach
+Max Drawdown — overall portfolio floor
+Per-trade Max Exposure — cap on any single position
+Asset Class Toggles — enable or disable crypto, stocks, and forex independently
+Emergency Stop — one clean button: "Stop All Activity." Instant. No confirmation loops.
+Collective Data Contribution Toggle — opt in or out of Global Brain training
+8.6 Advisory Feed
+For users in manual or hybrid mode. Intelligence without automation.
+Active Signals — current opportunities Apex has identified with reasoning
+Market Context — one or two sentences representing Apex's current market read
+Watchlist Intelligence — Apex monitors user-selected assets and surfaces insights
+Action Cards — "Apex suggests considering a long position on BTC · Tap for full reasoning"
+9. Notification System
+Philosophy: Apex is trusted to trade. It should also be trusted to know when to interrupt you.
+Notifications respect user attention. The system does not ping after every trade. It communicates at meaningful moments.
+9.1 Notification Tiers
+Critical — Always On (Cannot be Opted Out)
+Emergency stop triggered
+Apex could not execute a trade due to connectivity or account issue
+Risk Vault limit reached
+These are not alerts — they are responsibilities.
+Smart Intervals — Performance Digests
+Daily Digest — one notification at end of trading day. Net result and one AI line.
+Weekly Wrap — richer summary, strategy shifts, agent performance
+User selects interval preference during onboarding — daily, weekly, or milestones only
+Milestone Notifications — The Good Stuff
+First profitable week
+Portfolio up X% — user sets the threshold
+Agent phase advancement — "Your Apex agent just entered Autonomous phase"
+New personal best trade
+These feel earned. One clean notification. Quiet, never a celebration explosion.
+Loss Threshold Alerts — Opt-Out Available
+User sets threshold during onboarding — e.g. "Notify me if I'm down more than 5% in a day"
+Can be opted out entirely if user fully trusts the Risk Vault to handle limits
+Framing: Not "WARNING: YOU'RE LOSING MONEY" but "Apex has hit your loss threshold for today. Activity paused per your settings."
+10. AI Architecture
+The AI is the product. Everything else is the wrapper. QuantroApex's intelligence is not a single model — it is a system of cooperating models and engines designed to answer one question continuously:
+"Given current market conditions, my learned history, and this user's risk parameters — what is the best action right now? Buy, sell, hold, or do nothing."
+10.1 The Two-Layer Brain
+Global Brain
+A centrally trained foundation model shared across all users.
+Pre-trained on years of historical market data before launch
+Continuously updated with anonymised trade outcomes from all user agents
+Lives on Quantro's central infrastructure
+Updated on a scheduled daily retraining cycle — not real-time
+Acts as the foundation model — deep market understanding, not personalised
+Personal Agent
+A fine-tuned version of the Global Brain, unique to each user.
+Starts as a direct copy of the Global Brain at onboarding
+Fine-tunes over time on each user's trade history, risk preferences, and asset choices
+The older and more active an agent, the more it diverges from the base model — in a good way
+Personal fine-tuning layer stored separately from the Global Brain layer
+10.2 The Four Model Layers
+Layer 1 — Market Understanding
+These models observe the market and extract meaning from raw data. They do not make trading decisions — they build a rich, real-time picture of what is happening.
+Price and volume pattern recognition
+Volatility regime detection — trending, ranging, or chaotic
+Cross-asset correlation tracking
+Sentiment analysis — news and macro events processed into a market mood score
+Layer 2 — Signal Generation
+Takes the market picture from Layer 1 and generates trade signals with confidence scores attached. Multiple signals generated across multiple assets simultaneously. Reinforcement learning lives here — signals that led to profit are rewarded, bad signals are penalised.
+Layer 3 — Decision & Risk
+Signals say "opportunity" — this layer decides whether and how much.
+Filters signals through the user's Risk Vault parameters
+Position sizing — how much capital to allocate given current exposure
+Portfolio balance — over-concentration checks
+Entry timing — is now the right moment or is waiting better
+Layer 4 — Learning & Evolution Engine
+The layer that makes QuantroApex genuinely different from any existing product.
+Logs every trade with full context — market state, signal, decision, outcome
+Runs post-trade analysis — what worked, what did not, and why
+Feeds insights back into Layers 1, 2, and 3 continuously
+Manages phase transitions: Seed → Learning → Adapting → Autonomous
+Aggregates anonymised learnings into the Global Brain
+10.3 Reinforcement Learning Core
+The agent operates in a continuous loop:
+Step
+Action
+Detail
+Observe
+Read state
+Current market, portfolio, open positions
+Act
+Execute or hold
+Trade, adjust position, or do nothing
+Receive Reward
+Evaluate outcome
+Risk-adjusted return — not raw profit
+Update
+Refine model
+Weights adjusted based on reward signal
+The reward function is risk-adjusted, not pure profit maximisation. A small profit on a low-risk trade is rewarded more favourably than the same profit on a high-risk trade. This produces consistent, sustainable agents — not reckless ones.
+10.4 Agent Evolution Phases
+Phase
+Description
+Behaviour
+Trigger
+Seed
+Starting point
+Executes chosen strategy faithfully, no deviation
+From day one
+Learning
+Parameter tuning
+Adjusts entry timing, position sizes, hold duration
+Minimum trade count + performance consistency
+Adapting
+Strategy blending
+Combines elements from multiple strategies and observed patterns
+Confidence threshold reached
+Autonomous
+Full independence
+Develops and backtests its own strategies before deploying real capital
+Sustained performance consistency
+10.5 Cold Start Solution
+The system is never starting from zero, even before real user data exists.
+Pre-training dataset — historical OHLCV data across crypto, stocks, and forex going back 10+ years, from public exchange sources
+Backtesting engine — the AI runs millions of simulated trades against historical data before launch, arriving already experienced
+Strategy seeds — curated marketplace strategies provide structured behavioural starting points
+Paper trading — simulation mode generates valuable learning data from users who have not yet committed real capital
+10.6 Global Brain Update Protocol
+Personal agents must never experience a hard reset. The Gradual Inheritance Model protects personal learning across every Global Brain update.
+Step 1 — Shadow Running: New Global Brain runs in parallel with the existing one for weeks before any deployment. Only graduates if performance is demonstrably superior.
+Step 2 — Versioned Models: Global Brain versions are numbered and preserved. Personal agents are always tagged to their originating Global Brain version.
+Step 3 — Gradual Inheritance: Personal agents absorb global updates through their natural learning loop — knowledge osmosis, not a brain transplant.
+Step 4 — Personal Layer Preservation: The personal fine-tuning layer is stored separately and is never overwritten by a global update.
+User experience: Nothing disruptive. At most, a quiet entry in the activity feed: "Apex incorporated new market intelligence."
+10.7 Circuit Breaker — Autonomous Anomaly Detection
+When the system detects market conditions genuinely outside its training experience, it acts autonomously to protect user capital — no user input required.
+Triggers:
+Unprecedented volatility — outside anything in the training data
+Flash crash detection — sudden correlated price drops across multiple assets
+Liquidity collapse — bid-ask spreads indicating abnormal execution conditions
+Conflicting signal overload — all models producing contradictory signals simultaneously
+Black swan events — correlated crashes suggesting a macro event with no framework
+Response sequence:
+1. Close or hedge open positions where possible — capital protection first
+2. Pause all new trade execution immediately
+3. Enter Observation Mode — watching and learning, not acting
+4. Send one calm notification to the user
+5. Monitor for market stabilisation and resume automatically when conditions normalise
+Circuit breaker sensitivity scales with experience level and risk profile — conservative users trigger earlier and resume later; professional users have higher tolerance thresholds.
+11. Technical Architecture & Stack
+Given the four distinct technical demands of the system — real-time execution, AI-heavy computation, mobile-first delivery, and large-scale data management — no single stack handles all four equally well. The architecture is organised into cooperating layers.
+11.1 Frontend
+Mobile — Flutter
+Primary platform. Single codebase across iOS and Android. Smooth, performant UI suited to real-time data rendering. Flutter charting libraries handle performance analytics screens. Owns the core daily user experience.
+Web — Next.js
+Supplementary platform. Serves screens requiring more visual space — deep analytics, strategy research, comparative views. Server-side rendering for performance on data-heavy pages. Both platforms communicate with the same backend.
+11.2 Backend — Split Service Architecture
+API Gateway — Node.js
+Handles all user-facing operations. Fast, event-driven, optimised for many concurrent connections — essential for real-time trading feeds across many users simultaneously.
+Authentication and session management
+User data, settings, Risk Vault
+Strategy marketplace
+Notification dispatch
+Real-time activity feed via WebSockets
+AI Services — Python FastAPI
+Handles all intelligence operations. Python owns the AI/ML ecosystem — this is kept separate to let each service excel at what it does best.
+Model inference — generating trade signals
+Reinforcement learning training loops
+Backtesting engine
+Global Brain update pipeline
+Personal Agent management
+Circuit breaker logic
+The two backend services communicate internally via a message queue (Apache Kafka).
+11.3 Data Layer
+Storage
+Purpose
+PostgreSQL
+Core relational data — users, accounts, strategies, risk vault, trade records
+TimescaleDB
+Time-series market data — prices, volume, indicators (PostgreSQL extension)
+Redis
+Real-time layer — caching live market data, WebSocket feed, session management
+Object Storage (AWS S3)
+AI model files, trained model versions, historical datasets
+11.4 AI & ML Infrastructure
+Technology
+Role
+PyTorch
+Core model framework — flexible, industry-standard, production-ready
+RLlib / Stable-Baselines3
+Reinforcement Learning framework built on PyTorch
+Apache Kafka
+Real-time market data streaming pipeline — the nervous system of the AI
+Backtrader (+ custom)
+Backtesting engine for historical simulation before live deployment
+11.5 Broker & Exchange Integrations
+Each integration is abstracted behind a unified internal interface. The AI sends a signal; the integration layer handles asset-specific execution details.
+Asset Class
+Integration
+Notes
+Stocks
+Alpaca
+Commission-free, API-first, built-in paper trading environment
+Crypto
+Binance + Coinbase
+Binance for depth; Coinbase for US users and regulatory reliability
+Forex
+OANDA
+Clean REST and streaming API, well-suited for retail algorithmic trading
+11.6 Infrastructure & DevOps
+Technology
+Role
+AWS
+Primary cloud — wide ecosystem, strong ML tooling (SageMaker), global reliability
+Docker + Kubernetes
+Containerisation and orchestration — enables scaling without architectural rewrites
+GitHub Actions
+CI/CD — automated testing and deployment, critical for a financial product
+11.7 System Architecture Overview
+Flutter (Mobile)  ←→  Node.js API Gateway  ←→  PostgreSQL / TimescaleDB / Redis
+Next.js (Web)      ←→         ↕
+                        Python AI Services
+                               ↕
+                    Apache Kafka  ←→  Market Data Feeds
+                               ↕
+             PyTorch Models  |  RLlib RL Engine  |  Backtesting Engine
+                               ↕
+               Alpaca  |  Binance / Coinbase  |  OANDA
+11.8 Development Roadmap
+Phase
+Milestone
+Key Deliverables
+AI Capability
+MVP
+Core product
+Flutter mobile, Node.js API, PostgreSQL, Alpaca integration
+Strategy execution only
+V2
+Intelligence layer
+Python AI service, basic signal models, paper trading, Redis feed
+Basic signal generation
+V3
+Learning engine
+RL loop, personal agent learning, Kafka pipeline, multi-asset
+Personal Agent active
+V4
+Full autonomy
+Global Brain, Autonomous phase, full multi-broker, circuit breaker
+Full self-learning system
+12. Business Model
+Core Principle: QuantroApex makes money when its users make money — and gets better at making money the more users it has.
+12.1 Subscription Tiers
+Free — Apex Observer
+Starter — Apex Core
+Growth — Apex Pro
+Price
+Free
+$29 / month
+$79 / month
+Autopilot Mode
+None
+Up to $5,000 capital
+Up to $50,000 capital
+Advisory Mode
+Full
+Full
+Full
+Paper Trading
+Unlimited
+Unlimited
+Unlimited
+Asset Classes
+One
+Two
+All — Crypto, Stocks, Forex
+Strategy Marketplace
+Browse only
+Standard access
+Full + Premium strategies
+Agent Phases
+N/A
+Seed and Learning
+All phases + Autonomous
+AI Reasoning Feed
+Advisory only
+Basic
+Full intermediate detail
+Performance Analytics
+Basic
+Standard
+Advanced
+Notifications
+Weekly digest
+Daily digest
+Custom thresholds
+Elite — Apex Elite at $199/month adds: unlimited trading capital, professional-level AI transparency, early access to Global Brain updates, weekly deep-dive performance reports, API access for signal integration, and a direct support channel.
+Annual plans include two months free — improving cash flow, reducing churn, and committing users long enough for the AI to demonstrate meaningful performance.
+12.2 Performance Fee
+Applied on top of subscriptions in Autopilot Mode. Aligns Quantro's revenue directly with user success.
+Tier
+Performance Fee
+Starter
+15% of monthly profits
+Pro
+10% of monthly profits
+Elite
+5% of monthly profits
+High watermark rule: performance fee only applies to profits above the user's previous peak balance. If recovering from a drawdown, no fee until the prior high is surpassed. This is industry standard and fundamental to trust.
+12.3 Free-to-Paid Conversion Engine
+The free tier is the most important sales tool in the product. The conversion journey:
+User signs up free and runs paper trading
+Watches Apex make smart simulated trades over days or weeks
+Performance screen shows what they would have earned with real capital
+Soft prompt appears — not pushy — showing real simulated earnings
+"Your simulation generated $340 this week. Go live with Apex Core."
+The prompt shows actual simulated earnings, not abstract feature comparisons. The cost of staying free becomes tangibly real.
+12.4 Secondary Revenue Streams
+Data Insights — B2B (Future)
+The Global Brain develops genuinely valuable market intelligence over time. Aggregated, anonymised market behaviour data can be packaged and sold to financial research firms or hedge funds. Not a day-one play, but a significant long-term asset.
+Apex API — Developer Tier
+Professionals and institutional users who want Apex's signals integrated into their own systems. Charged per API call or as a flat monthly add-on. Opens a B2B channel without pivoting the core product.
+Referred Capital Programme
+Users who refer others receive a reduction in their performance fee. Converts satisfied users into a distribution channel organically.
+12.5 Unit Economics — Indicative Projections
+Metric
+Conservative
+Optimistic
+Year 1 users
+2,000
+8,000
+Paid conversion rate
+20%
+35%
+Average plan value
+Starter — $29/mo
+Pro — $79/mo
+Performance fee contribution
+30% of revenue
+50% of revenue
+Year 1 ARR
+~$140,000
+~$2,700,000
+The performance fee is the compounding multiplier. As users grow their capital and the AI performs, revenue grows without requiring proportional new user acquisition.
+13. Go-To-Market Strategy
+Phase 1 — Community First
+Before public launch, build in public. Trading communities on Reddit, X (Twitter), and Discord — algorithmic trading, crypto trading, and retail investing spaces. Share the story of building QuantroApex: the AI architecture, the vision, the design decisions. Attract early adopters who want to be part of something being built.
+Phase 2 — Beta Programme
+Closed beta with 500 users. Free Pro access for three months in exchange for feedback and testimonials. These users become the product's first advocates and the Global Brain's first real training data contributors. Their simulated and live trade data jumpstarts the learning engine.
+Phase 3 — Public Launch
+Public launch with a clear, honest hook:
+"The AI that gets smarter every time it trades."
+Content marketing around trading education, AI explainers, and performance transparency. Show the AI working — not just claim that it does. Live performance dashboards, anonymised case studies from beta users, and plain-English explainers on how the system thinks.
+Phase 4 — Referral & Community
+Referred Capital Programme launches. Power users become evangelists. Performance results start speaking for themselves. Community-contributed strategies become a platform feature, deepening engagement and loyalty.
+14. Competitive Landscape
+Competitor
+Type
+Limitation
+Apex Advantage
+3Commas
+Crypto trading bots
+No real AI learning, crypto-only, no autonomy
+Multi-asset, genuinely self-learning, full autonomy
+Cryptohopper
+Strategy-based bots
+No AI evolution, technical setup required
+Consumer-grade UX, evolving personal agent
+Kavout / Alpaca
+AI signals / infra
+Not consumer-facing, requires technical skill
+Complete product, zero technical barrier
+eToro
+Social / copy trading
+Copies humans, no AI autonomy, no self-improvement
+AI-driven, continuously improving, no human dependency
+Composer
+Algo trading builder
+Requires coding knowledge, no AI learning
+Zero code, fully autonomous, accessible to all
+The Gap QuantroApex Fills:
+Nobody is doing genuinely self-learning, autonomous, multi-asset trading for retail users with a consumer-grade experience. The closest products are either too technical, crypto-only, or not truly autonomous. That is the opportunity.
+15. Regulatory Considerations
+Automated trading systems that manage money on behalf of users can fall under investment advisor regulations in many jurisdictions. This is not a reason not to build — it is a reason to build carefully and in the right sequence.
+15.1 Key Regulatory Bodies
+United States — SEC (Securities and Exchange Commission)
+United Kingdom — FCA (Financial Conduct Authority)
+European Union — MiFID II framework
+Crypto-specific — varies significantly by jurisdiction
+15.2 Practical Approach
+Start in Crypto
+Crypto regulation is lighter than stocks and forex in most markets. Launching with crypto-only Autopilot mode first limits regulatory exposure while building product maturity and reputation.
+Legal Structure
+Consult fintech regulatory counsel early. Structure the product as a tool, not an investment advisor — users make the final decision to start and stop. The system executes within user-defined boundaries rather than making independent financial recommendations.
+Geo-Restrictions
+Initially restrict availability to markets with clearer, more favourable regulatory frameworks. Expand jurisdiction by jurisdiction with appropriate legal groundwork.
+Compliance by Design
+Build audit trails, trade logs, and risk disclosures into the product architecture from day one — not as afterthoughts. Every trade logged, every AI decision recorded, every user consent documented.
+16. Summary
+QuantroApex is a product with a clearly differentiated vision, a coherent design philosophy, a technically sound architecture, and a business model that aligns the company's success directly with user outcomes.
+The five things that make QuantroApex different:
+1. A self-learning AI that genuinely evolves — from strategy execution to full autonomy
+2. A two-layer intelligence architecture — personal growth backed by collective intelligence
+3. Quiet Confidence — a design philosophy that makes the experience feel as good as the technology
+4. Trust at every layer — simulation mode, transparent AI reasoning, Risk Vault, circuit breaker
+5. A business model that only wins when the user wins
+— End of Document —
+Quantro Software Labs  |  QuantroApex Product Blueprint  |  Confidential

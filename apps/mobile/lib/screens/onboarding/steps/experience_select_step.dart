@@ -17,13 +17,13 @@ class ExperienceSelectStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Welcome to Apex', style: AppTypography.secondary(color: AppColors.muted)),
+          Text('Welcome to Apex', style: AppTypography.secondary(color: const Color(0xFF94A3B8))),
           const SizedBox(height: AppSpacing.space2),
-          Text('Choose your experience path', style: AppTypography.h1(color: AppColors.primary)),
+          Text('Choose your experience path', style: AppTypography.h1(color: AppColors.white)),
           const SizedBox(height: AppSpacing.space2),
           Text(
             'We tailor the interface, tooltips, and setup depth to your trading experience.',
-            style: AppTypography.body(color: AppColors.muted),
+            style: AppTypography.body(color: const Color(0xFF94A3B8)),
           ),
           const SizedBox(height: AppSpacing.space5),
 
@@ -67,22 +67,19 @@ class _PathOptionCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.space4),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? AppColors.accent : AppColors.border,
+            color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF1E293B),
             width: isSelected ? 2 : 1,
           ),
-          boxShadow: const [
-            BoxShadow(color: Color(0x0A000000), blurRadius: 2, offset: Offset(0, 1)),
-          ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
               isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: isSelected ? AppColors.accent : AppColors.muted,
+              color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF64748B),
               size: 24,
             ),
             const SizedBox(width: AppSpacing.space3),
@@ -90,9 +87,9 @@ class _PathOptionCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTypography.h2(color: AppColors.primary)),
+                  Text(title, style: AppTypography.h2(color: AppColors.white)),
                   const SizedBox(height: AppSpacing.space2),
-                  Text(subtitle, style: AppTypography.secondary(color: AppColors.muted)),
+                  Text(subtitle, style: AppTypography.secondary(color: const Color(0xFF94A3B8))),
                 ],
               ),
             ),

@@ -1,9 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
+import {
+  findNotificationPrefs,
+  upsertNotificationPrefs,
+  findActiveUserStrategy,
+} from '../lib/db/repos.js';
 import { getUserId } from '../plugins/auth.js';
 import { executeOrder } from '../lib/execution_engine.js';
-import { AssetClass } from '@prisma/client';
 
 const prefsSchema = z.object({
   tradeAlerts: z.boolean().optional(),
@@ -29,19 +32,14 @@ export async function notificationRoutes(app: FastifyInstance) {
 
   app.get('/preferences', async (request, reply) => {
     const userId = getUserId(request);
-    let prefs = await prisma.notificationPreferences.findUnique({
-      where: { userId },
-    });
+    let prefs = await findNotificationPrefs(userId);
 
     if (!prefs) {
-      prefs = await prisma.notificationPreferences.create({
-        data: {
-          userId,
-          pushEnabled: true,
-          lossAlertsEnabled: true,
-          milestoneAlerts: true,
-          digestInterval: 'DAILY',
-        },
+      prefs = await upsertNotificationPrefs(userId, {
+        pushEnabled: true,
+        lossAlertsEnabled: true,
+        milestoneAlerts: true,
+        digestInterval: 'DAILY',
       });
     }
 
@@ -64,21 +62,12 @@ export async function notificationRoutes(app: FastifyInstance) {
     const userId = getUserId(request);
     const { tradeAlerts, riskAlerts, advisorySignals, digestFrequency } = parsed.data;
 
-    const updated = await prisma.notificationPreferences.upsert({
-      where: { userId },
-      create: {
-        userId,
-        pushEnabled: tradeAlerts ?? true,
-        lossAlertsEnabled: riskAlerts ?? true,
-        milestoneAlerts: advisorySignals ?? true,
-        digestInterval: digestFrequency ?? 'DAILY',
-      },
-      update: {
-        ...(tradeAlerts !== undefined && { pushEnabled: tradeAlerts }),
-        ...(riskAlerts !== undefined && { lossAlertsEnabled: riskAlerts }),
-        ...(advisorySignals !== undefined && { milestoneAlerts: advisorySignals }),
-        ...(digestFrequency !== undefined && { digestInterval: digestFrequency }),
-      },
+    const existing = await findNotificationPrefs(userId);
+    const updated = await upsertNotificationPrefs(userId, {
+      pushEnabled: tradeAlerts ?? existing?.pushEnabled ?? true,
+      lossAlertsEnabled: riskAlerts ?? existing?.lossAlertsEnabled ?? true,
+      milestoneAlerts: advisorySignals ?? existing?.milestoneAlerts ?? true,
+      digestInterval: digestFrequency ?? existing?.digestInterval ?? 'DAILY',
     });
 
     return reply.send({
@@ -99,32 +88,24 @@ export async function notificationRoutes(app: FastifyInstance) {
     }
 
     const userId = getUserId(request);
-    // Store the FCM token (saved securely server-side; not echoed in response)
-    await prisma.notificationPreferences.upsert({
-      where: { userId },
-      create: {
-        userId,
-        pushEnabled: true,
-      },
-      update: {
-        pushEnabled: true,
-      },
+    const { fcmToken } = parsed.data;
+
+    await upsertNotificationPrefs(userId, {
+      fcmToken,
+      pushEnabled: true,
     });
 
     return reply.send({
       message: 'Push notification token registered successfully',
-      fcmToken: parsed.data.fcmToken,
+      fcmToken,
     });
   });
 
   app.get('/advisory-feed', async (request, reply) => {
     const userId = getUserId(request);
-    const activeStrategy = await prisma.userStrategy.findFirst({
-      where: { userId, isActive: true },
-      include: { strategy: true },
-    });
+    const activeStrategy = await findActiveUserStrategy(userId);
 
-    const strategyName = activeStrategy?.strategy.name || 'Apex Momentum Alpha';
+    const strategyName = activeStrategy?.strategy?.name || 'Apex Momentum Alpha';
     const advisorySignals = [
       {
         id: 'adv_sig_001',
@@ -177,7 +158,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       side,
       orderType: 'MARKET',
       quantity,
-      assetClass: AssetClass.STOCKS,
+      assetClass: 'STOCKS',
       aiReasoning: `Advisory signal ${signalId} approved by user.`,
       isSimulated: true,
     });

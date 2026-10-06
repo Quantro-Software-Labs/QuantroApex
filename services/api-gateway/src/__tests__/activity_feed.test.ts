@@ -3,6 +3,7 @@ import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { eventBus } from '../lib/events/event_bus.js';
 import { FastifyInstance } from 'fastify';
+import { registerTestUser } from './helpers/firebase_auth.js';
 
 describe('Activity Feed & EventBus Integration', () => {
   let app: FastifyInstance;
@@ -19,18 +20,9 @@ describe('Activity Feed & EventBus Integration', () => {
       where: { email: { endsWith: '@feedtest.com' } },
     });
 
-    const regRes = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        email: 'trader@feedtest.com',
-        password: 'Password123!',
-      },
-    });
-
-    const body = JSON.parse(regRes.payload);
-    accessToken = body.accessToken;
-    userId = body.user.id;
+    const session = await registerTestUser(app, 'trader@feedtest.com');
+    accessToken = session.accessToken;
+    userId = session.user.id;
   });
 
   it('should fetch activity feed with agent state and strategy', async () => {

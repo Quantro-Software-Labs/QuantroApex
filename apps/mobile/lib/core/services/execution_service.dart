@@ -100,22 +100,41 @@ class ExecutionService {
     required String symbol,
     required String side,
     required double quantity,
+    String orderType = 'MARKET',
     double? limitPrice,
+    double? stopPrice,
+    double? trailingAmount,
+    double? takeProfit,
+    double? stopLoss,
+    bool isOco = false,
+    String owner = 'APEX',
     String assetClass = 'STOCKS',
     String? aiReasoning,
+    bool isSimulated = true,
   }) async {
     final token = await _authService.getAccessToken();
+    var resolvedType = orderType.toUpperCase().replaceAll('-', '_');
+    if (limitPrice != null && resolvedType == 'MARKET') {
+      resolvedType = 'LIMIT';
+    }
     final response = await _apiService.post(
       '/execution/order',
       token: token,
       body: {
         'symbol': symbol,
         'side': side,
-        'orderType': limitPrice != null ? 'LIMIT' : 'MARKET',
+        'orderType': resolvedType,
         'quantity': quantity,
         if (limitPrice != null) 'limitPrice': limitPrice,
+        if (stopPrice != null) 'stopPrice': stopPrice,
+        if (trailingAmount != null) 'trailingAmount': trailingAmount,
+        if (takeProfit != null) 'takeProfit': takeProfit,
+        if (stopLoss != null) 'stopLoss': stopLoss,
+        if (isOco) 'isOco': true,
+        'owner': owner,
         'assetClass': assetClass,
         if (aiReasoning != null) 'aiReasoning': aiReasoning,
+        'isSimulated': isSimulated,
       },
     );
     return response as Map<String, dynamic>;
@@ -124,5 +143,32 @@ class ExecutionService {
   Future<void> cancelOrder(String orderId) async {
     final token = await _authService.getAccessToken();
     await _apiService.post('/execution/orders/$orderId/cancel', token: token);
+  }
+
+  Future<Map<String, dynamic>> getBrokerCredentials() async {
+    final token = await _authService.getAccessToken();
+    final response = await _apiService.get('/execution/broker-credentials', token: token);
+    return response as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> saveBrokerCredentials({
+    required String apiKey,
+    required String secretKey,
+  }) async {
+    final token = await _authService.getAccessToken();
+    final response = await _apiService.post(
+      '/execution/broker-credentials',
+      token: token,
+      body: {
+        'apiKey': apiKey,
+        'secretKey': secretKey,
+      },
+    );
+    return response as Map<String, dynamic>;
+  }
+
+  Future<void> disconnectBroker() async {
+    final token = await _authService.getAccessToken();
+    await _apiService.delete('/execution/broker-credentials', token: token);
   }
 }

@@ -1,0 +1,151 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import "tailwindcss";
+
+/* ─── QuantroApex Design System — Dark First ───────────────────────────────── */
+
+:root {
+  /* Palette — Dark (default) */
+  --apex-bg: #060D1A;
+  --apex-surface: #0D1625;
+  --apex-hover: #111E33;
+  --apex-border: #1E2D47;
+  --apex-text: #E8EDF5;
+  --apex-muted: #6B7A99;
+  --apex-accent: #3B82F6;
+  --apex-accent-dim: rgba(59, 130, 246, 0.12);
+  --apex-success: #10B981;
+  --apex-danger: #EF4444;
+  --apex-warning: #F59E0B;
+
+  /* Typography */
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "Courier New", monospace;
+
+  /* Spacing scale (8-pt grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+
+  /* Motion */
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration-default: 150ms;
+  --duration-slow: 250ms;
+}
+
+/* Light mode — proper inversion, not an afterthought */
+[data-theme="light"] {
+  --apex-bg: #F0F4FA;
+  --apex-surface: #FFFFFF;
+  --apex-hover: #F5F8FF;
+  --apex-border: #E2E8F0;
+  --apex-text: #0A1628;
+  --apex-muted: #64748B;
+  --apex-accent: #2563EB;
+  --apex-accent-dim: rgba(37, 99, 235, 0.10);
+  --apex-success: #16A34A;
+  --apex-danger: #DC2626;
+  --apex-warning: #D97706;
+}
+
+/* ─── Base styles ──────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--apex-bg);
+  color: var(--apex-text);
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+}
+
+/* Scrollbar — minimal, non-intrusive */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--apex-border);
+  border-radius: 100px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--apex-muted);
+}
+
+/* Focus ring — accessible, matches accent */
+:focus-visible {
+  outline: 2px solid var(--apex-accent);
+  outline-offset: 2px;
+}
+
+/* ─── Tailwind v4 theme tokens ─────────────────────────────────────────────── */
+
+@theme inline {
+  /* Apex colour tokens — usable as bg-apex-bg, text-apex-text, border-apex-border, etc. */
+  --color-apex-bg: var(--apex-bg);
+  --color-apex-surface: var(--apex-surface);
+  --color-apex-hover: var(--apex-hover);
+  --color-apex-border: var(--apex-border);
+  --color-apex-text: var(--apex-text);
+  --color-apex-muted: var(--apex-muted);
+  --color-apex-accent: var(--apex-accent);
+  --color-apex-success: var(--apex-success);
+  --color-apex-danger: var(--apex-danger);
+  --color-apex-warning: var(--apex-warning);
+
+  /* Typography */
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+/* ─── Animations ───────────────────────────────────────────────────────────── */
+
+@keyframes apex-ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes apex-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes apex-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes apex-skeleton {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+/* Pulse used for skeleton loaders */
+.animate-pulse {
+  animation: apex-skeleton 1.8s ease-in-out infinite;
+}
+
+/* Activity feed entries — fade in on mount */
+.apex-fade-in {
+  animation: apex-fade-in 150ms var(--ease-ui) both;
+}
