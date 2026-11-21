@@ -13,6 +13,7 @@ import asyncio
 import os
 import random
 import socket
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -257,13 +258,13 @@ class BinanceVisionDownloader:
                     return resp.json()
                 if resp.status_code == 429:
                     logger.warning(f"Rate limited (429) fetching {symbol} {interval}, sleeping 2s...")
-                    asyncio.run(asyncio.sleep(2.0))
+                    time.sleep(2.0)
                     continue
                 resp.raise_for_status()
             except (httpx.ConnectError, httpx.RequestError) as exc:
                 if attempt == 3:
                     raise
-                asyncio.run(asyncio.sleep(1.0 + attempt))
+                time.sleep(1.0 + attempt)
         return []
 
     def download_symbol_interval(
