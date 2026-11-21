@@ -17,7 +17,7 @@ export class CcxtMarketDataClient {
   private exchange: Exchange | null = null;
 
   constructor(opts?: { exchangeId?: string }) {
-    this.exchangeId = opts?.exchangeId || config.crypto.exchange || 'binance';
+    this.exchangeId = opts?.exchangeId || config.marketData.cryptoExchange || config.crypto.exchange || 'kraken';
   }
 
   private getExchange(): Exchange {

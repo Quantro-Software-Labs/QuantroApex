@@ -1,0 +1,24 @@
+-- Migration: Enable Row Level Security on all tables with no public policies (deny by default).
+-- The api-gateway connects via the Postgres service role / direct pool, bypassing RLS.
+-- This ensures all public/anon/authenticated client queries via PostgREST/Supabase client are denied by default.
+
+ALTER TABLE IF EXISTS "users" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "user_profiles" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "onboarding_progress" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "risk_vaults" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "waitlist" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "strategies" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "user_strategies" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "portfolios" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "positions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "orders" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "trades" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "activity_feed_entries" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "agent_states" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "notification_preferences" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "subscriptions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "kyc_verifications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "market_observations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "trade_learning_data" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "payment_transactions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS "equity_snapshots" ENABLE ROW LEVEL SECURITY;

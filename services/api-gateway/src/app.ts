@@ -26,12 +26,40 @@ import { backtestRoutes } from './routes/backtest.js';
 import { waitlistRoutes } from './routes/waitlist.js';
 import { usersRoutes } from './routes/users.js';
 import { subscriptionsRoutes } from './routes/subscriptions.js';
+import { configRoutes } from './routes/config.js';
+import { validateBrokerKeyEncryptionBoot } from './lib/security/encryption.js';
+import { assertDatabaseRlsAccess } from './lib/db/rls_check.js';
 
 export async function buildApp() {
+  validateBrokerKeyEncryptionBoot();
+  await assertDatabaseRlsAccess();
   initSentry();
 
   const app = Fastify({
-    logger: { level: config.isDev ? 'info' : 'warn' },
+    logger: {
+      level: config.isDev ? 'info' : 'warn',
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'headers.authorization',
+          'req.headers["authorization"]',
+          '*.authorization',
+          '*.*.authorization',
+          'req.body.apiKey',
+          'req.body.secretKey',
+          'req.body.secret',
+          'req.body.password',
+          'req.body.token',
+          '*.apiKey',
+          '*.secretKey',
+          '*.secret',
+          '*.key',
+          '*.token',
+          '*.password',
+        ],
+        censor: '[REDACTED]',
+      },
+    },
     bodyLimit: 65536,
   });
 
@@ -88,6 +116,7 @@ export async function buildApp() {
   await app.register(patternsRoutes, { prefix: '/patterns' });
   await app.register(backtestRoutes, { prefix: '/backtest' });
   await app.register(waitlistRoutes, { prefix: '/waitlist' });
+  await app.register(configRoutes);
 
   app.setErrorHandler((error: any, _request, reply) => {
     app.log.error(error);

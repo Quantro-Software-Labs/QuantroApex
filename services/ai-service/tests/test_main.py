@@ -53,3 +53,24 @@ def test_backtest_run():
     data = response.json()
     assert "total_return" in data
     assert "final_value" in data
+
+@pytest.mark.asyncio
+async def test_load_ohlcv_no_synthetic_fallback():
+    from app.data.market_data import load_ohlcv
+    with pytest.raises(RuntimeError, match="Synthetic candle fallback is disabled"):
+        await load_ohlcv("STOCKS", "NONEXISTENT_TICKER", "1h", bars=50)
+
+def test_backtest_default_fees_applied():
+    from app.backtesting.backtest_runner import run_backtest
+    candles = [
+        {"timestamp": f"2026-01-0{i+1}T00:00:00Z", "open": 100.0 + i, "high": 105.0 + i, "low": 99.0 + i, "close": 100.0 + i, "volume": 1000}
+        for i in range(5)
+    ]
+    # In buy_hold, if price is flat, total_return will be slightly negative due to mandatory entry/exit fees
+    flat_candles = [
+        {"timestamp": f"2026-01-0{i+1}T00:00:00Z", "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 1000}
+        for i in range(5)
+    ]
+    result = run_backtest(flat_candles, "buy_hold", params={}, initial_cash=10000.0)
+    # Total return must be negative because fees are applied and never zero
+    assert result["total_return"] < 0.0

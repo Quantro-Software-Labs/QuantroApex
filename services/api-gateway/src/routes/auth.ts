@@ -7,6 +7,7 @@ import { prisma } from '../lib/prisma.js';
 import { getUserId } from '../plugins/firebase_auth.js';
 import { posthog } from '../lib/analytics/posthog_client.js';
 import { sendWelcomeEmail } from '../lib/email/resend_client.js';
+import { decryptSecret } from '../lib/security/encryption.js';
 
 function safeUser(user: {
   id: string;
@@ -29,6 +30,17 @@ function safeUser(user: {
     experienceLevel: user.experienceLevel,
     preferredMarket: user.preferredMarket,
     onboardingCompletedAt: user.onboardingCompletedAt,
+  };
+}
+
+export function safeProfile(profile: any) {
+  if (!profile) return null;
+  const { alpacaApiKey, alpacaSecretKey, ...rest } = profile;
+  const last4 = alpacaApiKey ? decryptSecret(alpacaApiKey).slice(-4) : null;
+  return {
+    ...rest,
+    hasBrokerKeys: Boolean(alpacaApiKey && alpacaSecretKey),
+    brokerApiKeyLast4: last4,
   };
 }
 
@@ -73,7 +85,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     return reply.send({
       ...safeUser(user),
-      profile: user.profile,
+      profile: safeProfile(user.profile),
       onboardingProgress: user.onboardingProgress,
       agentState: user.agentState,
       subscription: user.subscription,

@@ -7,8 +7,8 @@ export const metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-[#060D1A] text-slate-200 py-12 px-4 sm:px-6 lg:px-8">
-      <main className="max-w-3xl mx-auto space-y-8 bg-[#0F172A] border border-slate-800 rounded-3xl p-8 sm:p-12 shadow-2xl">
+    <div className="min-h-screen bg-apex-bg text-slate-200 py-12 px-4 sm:px-6 lg:px-8">
+      <main className="max-w-3xl mx-auto space-y-8 bg-apex-surface border border-apex-border rounded-3xl p-8 sm:p-12 shadow-2xl">
         <div>
           <Link href="/" className="text-xs font-semibold text-blue-400 hover:underline">
             &larr; Return to QuantroApex

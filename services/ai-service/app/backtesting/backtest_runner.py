@@ -44,13 +44,21 @@ def _to_close_series(candles: list[dict[str, Any]]) -> pd.Series:
     return close
 
 
+DEFAULT_FEES_STOCKS: float = 0.0005  # 5 bps
+DEFAULT_FEES_CRYPTO: float = 0.0010  # 10 bps
+DEFAULT_SLIPPAGE_STOCKS: float = 0.0005  # 5 bps
+DEFAULT_SLIPPAGE_CRYPTO: float = 0.0010  # 10 bps
+
+
 def _fallback_backtest(
     close: pd.Series,
     entries: pd.Series,
     exits: pd.Series,
     initial_cash: float,
+    fees: float = DEFAULT_FEES_STOCKS,
+    slippage: float = DEFAULT_SLIPPAGE_STOCKS,
 ) -> dict[str, Any]:
-    """Minimal long-only simulator when vectorbt is missing."""
+    """Minimal long-only simulator with fees and slippage when vectorbt is missing."""
     cash = float(initial_cash)
     position = 0.0
     equity: list[float] = []
@@ -60,21 +68,25 @@ def _fallback_backtest(
 
     for i, price in enumerate(close.to_numpy(dtype=np.float64)):
         if position == 0 and bool(entries.iloc[i]) and price > 0:
-            position = cash / price
+            effective_entry = price * (1.0 + slippage)
+            position = (cash * (1.0 - fees)) / effective_entry
             cash = 0.0
-            entry_price = float(price)
+            entry_price = float(effective_entry)
             trades += 1
         elif position > 0 and bool(exits.iloc[i]):
-            cash = position * price
-            if entry_price is not None and price > entry_price:
+            effective_exit = price * (1.0 - slippage)
+            cash = position * effective_exit * (1.0 - fees)
+            if entry_price is not None and effective_exit > entry_price:
                 wins += 1
             position = 0.0
             entry_price = None
-        equity.append(cash + position * price)
+        current_val = cash + (position * price * (1.0 - slippage) * (1.0 - fees) if position > 0 else 0.0)
+        equity.append(current_val)
 
     if position > 0:
-        cash = position * close.iloc[-1]
-        if entry_price is not None and float(close.iloc[-1]) > entry_price:
+        effective_exit = float(close.iloc[-1]) * (1.0 - slippage)
+        cash = position * effective_exit * (1.0 - fees)
+        if entry_price is not None and effective_exit > entry_price:
             wins += 1
         position = 0.0
 
@@ -152,11 +164,13 @@ def run_backtest(
     exits = signals["exits"]
 
     runner = BacktestRunner()
+    fee_param = params.get("fees")
+    fees = float(fee_param) if fee_param is not None and float(fee_param) > 0 else DEFAULT_FEES_STOCKS
     result = runner.run(
         df,
         signals,
         initial_cash=initial_cash,
-        fees=float(params.get("fees", 0.0)),
+        fees=fees,
         freq=str(params.get("freq", "1D")),
     )
     result["strategy"] = {"type": strategy_type, "params": params}
@@ -188,8 +202,11 @@ class BacktestRunner:
         entries = pd.Series(strategy_signals["entries"], index=ohlcv.index).fillna(False)
         exits = pd.Series(strategy_signals["exits"], index=ohlcv.index).fillna(False)
 
+        fee_rate = float(fees) if fees and fees > 0 else DEFAULT_FEES_STOCKS
+        slippage_rate = float(strategy_signals.get("slippage") or DEFAULT_SLIPPAGE_STOCKS)
+
         if not VECTORBT_AVAILABLE:
-            result = _fallback_backtest(price, entries, exits, initial_cash)
+            result = _fallback_backtest(price, entries, exits, initial_cash, fees=fee_rate, slippage=slippage_rate)
             result["warning"] = "vectorbt not installed — using minimal pandas fallback"
             result["sharpe_ratio"] = result["sharpe"]
             result["total_trades"] = result["trades"]
@@ -198,7 +215,8 @@ class BacktestRunner:
         assert _vbt is not None
         kwargs: dict[str, Any] = {
             "init_cash": initial_cash,
-            "fees": fees,
+            "fees": fee_rate,
+            "slippage": slippage_rate,
             "freq": freq,
         }
         if strategy_signals.get("stop_loss") is not None:

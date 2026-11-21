@@ -13,7 +13,7 @@ import {
 } from '../lib/db/repos.js';
 import { getUserId } from '../plugins/auth.js';
 import { executeOrder, syncUserPendingOrders } from '../lib/execution_engine.js';
-import { AlpacaClient } from '../lib/broker/alpaca_client.js';
+import { resolveBrokerClient } from '../lib/broker/broker_resolver.js';
 
 const toggleModeSchema = z.object({
   mode: z.enum(['SIM', 'LIVE']),
@@ -25,7 +25,12 @@ const generateTicksSchema = z.object({
 });
 
 export async function simulationRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.url.includes('/generate-ticks') && process.env.NODE_ENV !== 'test') {
+      return reply.status(404).send({ error: 'NotFound', message: 'Route not found' });
+    }
+    return app.authenticate(request, reply);
+  });
 
   app.get('/summary', async (request, reply) => {
     const userId = getUserId(request);
@@ -49,10 +54,7 @@ export async function simulationRoutes(app: FastifyInstance) {
 
     if (profile?.isBrokerConnected && profile.alpacaApiKey && profile.alpacaSecretKey) {
       try {
-        const client = new AlpacaClient({
-          apiKey: profile.alpacaApiKey,
-          apiSecret: profile.alpacaSecretKey,
-        });
+        const client = resolveBrokerClient('STOCKS', profile);
         const [account, positions] = await Promise.all([
           client.getAccount(),
           client.getPositions(),
@@ -170,6 +172,10 @@ const resetSchema = z.object({
   });
 
   app.post('/generate-ticks', async (request, reply) => {
+    if (process.env.NODE_ENV !== 'test') {
+      return reply.status(404).send({ error: 'NotFound', message: 'Route not found' });
+    }
+
     const parsed = generateTicksSchema.safeParse(request.body);
     const userId = getUserId(request);
     const symbol = (parsed.success && parsed.data.symbol) ? parsed.data.symbol.toUpperCase() : 'AAPL';

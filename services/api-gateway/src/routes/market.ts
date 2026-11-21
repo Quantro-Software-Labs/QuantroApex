@@ -88,10 +88,10 @@ export async function marketRoutes(app: FastifyInstance) {
     const alpacaKeys = await getUserAlpacaKeys(userId);
     const detail = await resolveAssetDetail(decodedSymbol, alpacaKeys);
 
-    if (!detail) {
-      return reply.status(404).send({
-        error: 'NotFoundError',
-        message: `Asset symbol ${decodedSymbol} not found.`,
+    if (!detail || !detail.candlesLive || detail.candles.length === 0) {
+      return reply.status(503).send({
+        error: 'MARKET_DATA_UNAVAILABLE',
+        message: `Market data history unavailable for ${decodedSymbol}.`,
       });
     }
 
@@ -154,7 +154,8 @@ Style requirements:
     }
 
     if (!studyText) {
-      studyText = `Apex Study: ${symbol} (${stock.assetClass}) displays ${stock.changePct24h >= 0 ? 'positive' : 'mixed'} momentum with price at ${stock.price}. Sector context: ${stock.sector}. Recommendation: ${stock.changePct24h >= 0 ? 'Strategic entry on minor pullbacks' : 'Hold and monitor support levels'}.`;
+      const chg = stock.changePct24h ?? 0;
+      studyText = `Apex Study: ${symbol} (${stock.assetClass}) displays ${chg >= 0 ? 'positive' : 'mixed'} momentum with price at ${stock.price}. Sector context: ${stock.sector}. Recommendation: ${chg >= 0 ? 'Strategic entry on minor pullbacks' : 'Hold and monitor support levels'}.`;
     }
 
     return reply.send({
@@ -162,7 +163,7 @@ Style requirements:
       name: stock.name,
       price: stock.price,
       studyText,
-      recommendation: stock.changePct24h >= 0 ? 'ACCUMULATE' : 'HOLD_DIP',
+      recommendation: (stock.changePct24h ?? 0) >= 0 ? 'ACCUMULATE' : 'HOLD_DIP',
       confidenceScore: 0.88,
       timestamp: new Date().toISOString(),
     });

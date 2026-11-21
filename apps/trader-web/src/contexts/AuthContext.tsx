@@ -32,12 +32,13 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function createMockUser(email: string, name?: string): FirebaseUser {
+  const uid = 'demo-user-' + Math.random().toString(36).substring(2, 9);
   return {
-    uid: 'demo-user-' + Math.random().toString(36).substring(2, 9),
+    uid,
     email,
     displayName: name || email.split('@')[0] || 'Quantro Trader',
     emailVerified: true,
-    getIdToken: async () => 'demo-bearer-token-123',
+    getIdToken: async () => `firebase_dev:${uid}:${email}`,
   } as unknown as FirebaseUser;
 }
 
@@ -53,16 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (savedDemo) {
         try {
           const parsed = JSON.parse(savedDemo);
-          setTimeout(() => {
-            setUser({
-              uid: parsed.uid,
-              email: parsed.email,
-              displayName: parsed.displayName,
-              emailVerified: true,
-              getIdToken: async () => 'demo-token-123',
-            } as unknown as FirebaseUser);
-            setLoading(false);
-          }, 0);
+      setTimeout(() => {
+        const uid = parsed.uid || 'demo-uid';
+        const email = parsed.email || 'demo@quantrolabs.app';
+        setUser({
+          uid,
+          email,
+          displayName: parsed.displayName,
+          emailVerified: true,
+          getIdToken: async () => parsed.token || `firebase_dev:${uid}:${email}`,
+        } as unknown as FirebaseUser);
+        setLoading(false);
+      }, 0);
           return;
         } catch {
           // ignore
@@ -94,7 +97,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(
         'quantro_demo_user',
-        JSON.stringify({ uid: mock.uid, email: mock.email, displayName: mock.displayName })
+        JSON.stringify({
+          uid: mock.uid,
+          email: mock.email,
+          displayName: mock.displayName,
+          token: `firebase_dev:${mock.uid}:${mock.email}`,
+        }),
       );
     }
     router.push('/home');

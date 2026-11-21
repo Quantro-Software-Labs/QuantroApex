@@ -1,8 +1,9 @@
 import type { AssetClass } from '../db/types.js';
 import { IBrokerClient } from './broker_client.js';
-import { AlpacaClient, defaultBrokerClient } from './alpaca_client.js';
-import { CcxtClient, cryptoBrokerClient } from './ccxt_client.js';
-import { OandaClient, forexBrokerClient } from './oanda_client.js';
+import { AlpacaClient } from './alpaca_client.js';
+import { CcxtClient } from './ccxt_client.js';
+import { OandaClient } from './oanda_client.js';
+import { decryptSecret } from '../security/encryption.js';
 
 export interface BrokerCredentials {
   alpacaApiKey?: string | null;
@@ -15,8 +16,10 @@ export interface BrokerCredentials {
 }
 
 /**
- * Resolve the correct third-party broker for an asset class.
+ * Resolve the correct third-party broker for an asset class in LIVE mode.
  * Stocks → Alpaca | Crypto → CCXT | Forex → OANDA
+ * Requires user's own broker credentials. Throws if missing.
+ * Decrypts credentials only inside broker_resolver right before building the client.
  */
 export function resolveBrokerClient(
   assetClass: AssetClass | string,
@@ -28,29 +31,29 @@ export function resolveBrokerClient(
     if (credentials?.cryptoApiKey && credentials?.cryptoApiSecret) {
       return new CcxtClient({
         exchangeId: credentials.cryptoExchange ?? undefined,
-        apiKey: credentials.cryptoApiKey,
-        apiSecret: credentials.cryptoApiSecret,
+        apiKey: decryptSecret(credentials.cryptoApiKey),
+        apiSecret: decryptSecret(credentials.cryptoApiSecret),
       });
     }
-    return cryptoBrokerClient;
+    throw new Error('No broker credentials configured for LIVE trading on CRYPTO.');
   }
 
   if (cls === 'FOREX') {
     if (credentials?.oandaApiKey && credentials?.oandaAccountId) {
       return new OandaClient({
-        apiKey: credentials.oandaApiKey,
+        apiKey: decryptSecret(credentials.oandaApiKey),
         accountId: credentials.oandaAccountId,
       });
     }
-    return forexBrokerClient;
+    throw new Error('No broker credentials configured for LIVE trading on FOREX.');
   }
 
   // STOCKS (default)
   if (credentials?.alpacaApiKey && credentials?.alpacaSecretKey) {
     return new AlpacaClient({
-      apiKey: credentials.alpacaApiKey,
-      apiSecret: credentials.alpacaSecretKey,
+      apiKey: decryptSecret(credentials.alpacaApiKey),
+      apiSecret: decryptSecret(credentials.alpacaSecretKey),
     });
   }
-  return defaultBrokerClient;
+  throw new Error('No broker credentials configured for LIVE trading on STOCKS.');
 }

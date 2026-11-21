@@ -287,6 +287,7 @@ class TimescaleWriter:
             features = s["features"]
             if isinstance(features, (dict, list)):
                 features = json.dumps(features)
+            ts = s.get("timestamp") or s["entry_time"]
             records.append(
                 (
                     s["symbol"],
@@ -307,6 +308,7 @@ class TimescaleWriter:
                     float(s["signal_strength"])
                     if s.get("signal_strength") is not None
                     else None,
+                    ts,
                 )
             )
         async with pool.acquire() as conn:
@@ -315,8 +317,18 @@ class TimescaleWriter:
                 INSERT INTO labelled_samples
                   (symbol, exchange, asset_class, timeframe, strategy_id,
                    entry_time, exit_time, entry_price, exit_price, direction,
-                   outcome, pnl_pct, hold_duration, market_regime, features, signal_strength)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16)
+                   outcome, pnl_pct, hold_duration, market_regime, features, signal_strength, timestamp)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17)
+                ON CONFLICT (symbol, exchange, timeframe, timestamp)
+                DO UPDATE SET
+                  exit_time = EXCLUDED.exit_time,
+                  exit_price = EXCLUDED.exit_price,
+                  outcome = EXCLUDED.outcome,
+                  pnl_pct = EXCLUDED.pnl_pct,
+                  hold_duration = EXCLUDED.hold_duration,
+                  market_regime = EXCLUDED.market_regime,
+                  features = EXCLUDED.features,
+                  signal_strength = EXCLUDED.signal_strength
                 """,
                 records,
             )
@@ -417,17 +429,21 @@ class TimescaleWriter:
         take_trade: bool,
         predicted_class: str,
         gate: float,
+        direction: str = "BUY",
+        bar_timestamp: datetime | None = None,
         meta: dict[str, Any] | None = None,
     ) -> None:
         pool = await get_pool()
         payload = json.dumps(meta or {})
+        ts = bar_timestamp or datetime.now(timezone.utc)
         async with pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO paper_signals
                   (symbol, timeframe, asset_class, win_prob, gate,
-                   predicted_class, take_trade, meta)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+                   predicted_class, take_trade, direction, bar_timestamp, meta)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+                ON CONFLICT (symbol, direction, bar_timestamp) DO NOTHING
                 """,
                 symbol,
                 timeframe,
@@ -436,8 +452,108 @@ class TimescaleWriter:
                 float(gate),
                 predicted_class,
                 bool(take_trade),
+                direction,
+                ts,
                 payload,
             )
+
+    async def resolve_paper_signals(
+        self,
+        tp_target: float = 0.02,
+        sl_target: float = 0.01,
+        timeout_bars: int = 24,
+    ) -> int:
+        """Resolve outcomes (target, stop, or timeout) for paper signals from real later bars."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            unresolved = await conn.fetch(
+                """
+                SELECT id, symbol, timeframe, bar_timestamp, direction, win_prob, meta
+                FROM paper_signals
+                WHERE resolved = FALSE AND bar_timestamp IS NOT NULL
+                ORDER BY bar_timestamp ASC
+                LIMIT 500
+                """
+            )
+            if not unresolved:
+                return 0
+
+            resolved_count = 0
+            for row in unresolved:
+                sig_id = row["id"]
+                sym = row["symbol"]
+                tf = row["timeframe"]
+                bar_ts = row["bar_timestamp"]
+                meta = row["meta"] or {}
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+
+                entry_price = float(meta.get("entry_price") or meta.get("price") or 0.0)
+                bars = await conn.fetch(
+                    """
+                    SELECT time, open, high, low, close
+                    FROM market_ohlcv
+                    WHERE symbol=$1 AND timeframe=$2 AND time > $3
+                    ORDER BY time ASC
+                    LIMIT $4
+                    """,
+                    sym,
+                    tf,
+                    bar_ts,
+                    timeout_bars,
+                )
+                if not bars:
+                    continue
+
+                if entry_price <= 0:
+                    entry_price = float(bars[0]["open"])
+
+                target = entry_price * (1.0 + tp_target)
+                stop = entry_price * (1.0 - sl_target)
+                outcome = None
+                exit_price = entry_price
+
+                for b in bars:
+                    b_high = float(b["high"])
+                    b_low = float(b["low"])
+                    hit_stop = b_low <= stop
+                    hit_target = b_high >= target
+                    if hit_stop and hit_target:
+                        outcome = "LOSS"
+                        exit_price = stop
+                        break
+                    elif hit_stop:
+                        outcome = "LOSS"
+                        exit_price = stop
+                        break
+                    elif hit_target:
+                        outcome = "WIN"
+                        exit_price = target
+                        break
+
+                if outcome is None and len(bars) >= timeout_bars:
+                    exit_price = float(bars[-1]["close"])
+                    pnl_raw = (exit_price - entry_price) / entry_price
+                    outcome = "WIN" if pnl_raw > 0.001 else "LOSS"
+
+                if outcome is not None:
+                    pnl_pct = (exit_price - entry_price) / entry_price
+                    await conn.execute(
+                        """
+                        UPDATE paper_signals
+                        SET resolved = TRUE, outcome = $1, pnl_pct = $2
+                        WHERE id = $3
+                        """,
+                        outcome,
+                        float(pnl_pct),
+                        sig_id,
+                    )
+                    resolved_count += 1
+
+            return resolved_count
 
     async def start_training_run(self, model_version: str) -> int:
         pool = await get_pool()

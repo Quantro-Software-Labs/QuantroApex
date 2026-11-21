@@ -43,13 +43,21 @@ enum OrderType {
 }
 
 enum OrderStatus {
+  PENDING_SUBMIT
   PENDING
+  QUEUED
   SUBMITTED
   ACCEPTED
   FILLED
   PARTIALLY_FILLED
   CANCELLED
   REJECTED
+  EXPIRED
+}
+
+enum LimitUnit {
+  PERCENT
+  USD
 }
 
 enum TradeOwner {
@@ -142,6 +150,8 @@ model User {
   waitlistEntries    Waitlist[]
   subscription       Subscription?
   kycVerification    KYCVerification?
+  paymentTransactions PaymentTransaction[]
+  equitySnapshots    EquitySnapshot[]
 
   @@map("users")
 }
@@ -180,13 +190,16 @@ model OnboardingProgress {
 }
 
 model RiskVault {
-  id               String     @id @default(cuid())
-  userId           String     @map("user_id")
-  assetClass       AssetClass @map("asset_class")
-  dailyLossLimit   Decimal    @map("daily_loss_limit") @db.Decimal(18, 2)
-  maxDrawdown      Decimal    @map("max_drawdown") @db.Decimal(5, 4)
-  perTradeExposure Decimal    @map("per_trade_exposure") @db.Decimal(5, 4)
-  assetsEnabled    Boolean    @default(true) @map("assets_enabled")
+  id                   String     @id @default(cuid())
+  userId               String     @map("user_id")
+  assetClass           AssetClass @map("asset_class")
+  dailyLossLimit       Decimal    @map("daily_loss_limit") @db.Decimal(18, 2)
+  dailyLossLimitUnit   LimitUnit  @default(PERCENT) @map("daily_loss_limit_unit")
+  maxDrawdown          Decimal    @map("max_drawdown") @db.Decimal(5, 4)
+  maxDrawdownUnit      LimitUnit  @default(PERCENT) @map("max_drawdown_unit")
+  perTradeExposure     Decimal    @map("per_trade_exposure") @db.Decimal(5, 4)
+  perTradeExposureUnit LimitUnit  @default(PERCENT) @map("per_trade_exposure_unit")
+  assetsEnabled        Boolean    @default(true) @map("assets_enabled")
   emergencyStop    Boolean    @default(false) @map("emergency_stop")
   /// Legacy compatibility field — prefer emergencyStop
   emergencyStoppedAt DateTime? @map("emergency_stopped_at")
@@ -253,16 +266,18 @@ model UserStrategy {
 }
 
 model Portfolio {
-  id          String        @id @default(cuid())
-  userId      String        @map("user_id")
-  mode        PortfolioMode
-  cashBalance Decimal       @default(0) @map("cash_balance") @db.Decimal(18, 2)
-  equity      Decimal       @default(0) @db.Decimal(18, 2)
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id              String           @id @default(cuid())
+  userId          String           @map("user_id")
+  mode            PortfolioMode
+  cashBalance     Decimal          @default(0) @map("cash_balance") @db.Decimal(18, 2)
+  equity          Decimal          @default(0) @db.Decimal(18, 2)
+  peakEquity      Decimal          @default(0) @map("peak_equity") @db.Decimal(18, 2)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  positions Position[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions       Position[]
+  equitySnapshots EquitySnapshot[]
 
   @@unique([userId, mode])
   @@map("portfolios")
@@ -301,6 +316,9 @@ model Order {
   owner          TradeOwner  @default(APEX)
   status         OrderStatus @default(PENDING)
   isSimulated    Boolean     @default(false) @map("is_simulated")
+  timeInForce    String      @default("DAY") @map("time_in_force")
+  reservedCash     Decimal   @default(0) @map("reserved_cash") @db.Decimal(18, 4)
+  reservedQuantity Decimal   @default(0) @map("reserved_quantity") @db.Decimal(18, 8)
   brokerOrderId  String?     @map("broker_order_id")
   idempotencyKey String?     @unique @map("idempotency_key")
   createdAt      DateTime    @default(now()) @map("created_at")
@@ -320,6 +338,7 @@ model Trade {
   orderId       String     @map("order_id")
   fillPrice     Decimal    @map("fill_price") @db.Decimal(18, 4)
   fillQuantity  Decimal    @map("fill_quantity") @db.Decimal(18, 8)
+  fee           Decimal    @default(0) @db.Decimal(18, 4)
   realizedPnl   Decimal?   @map("realized_pnl") @db.Decimal(18, 2)
   aiReasoning   String?    @map("ai_reasoning")
   marketContext Json?      @map("market_context")
@@ -466,4 +485,40 @@ model MarketObservation {
   @@index([assetClass, observedAt])
   @@index([source, observedAt])
   @@map("market_observations")
+}
+
+model PaymentTransaction {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  reference String    @unique
+  plan      PlanTier
+  amount    Int       // in kobo
+  currency  String    @default("NGN")
+  channel   String    @default("paystack")
+  status    String
+  paidAt    DateTime? @map("paid_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  metadata  Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payment_transactions")
+}
+
+model EquitySnapshot {
+  id          String        @id @default(cuid())
+  userId      String        @map("user_id")
+  portfolioId String        @map("portfolio_id")
+  mode        PortfolioMode @default(SIM)
+  equity      Decimal       @db.Decimal(18, 2)
+  cashBalance Decimal       @map("cash_balance") @db.Decimal(18, 2)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, createdAt])
+  @@index([userId, createdAt])
+  @@map("equity_snapshots")
 }

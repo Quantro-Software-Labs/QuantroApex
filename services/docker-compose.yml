@@ -21,6 +21,22 @@ services:
       timeout: 5s
       retries: 5
 
+  api-gateway:
+    profiles: ["gateway", "full"]
+    build: ../services/api-gateway
+    container_name: quantroapex-api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: ../.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://quantroapex:quantroapex_dev@postgres:5432/quantroapex?schema=public
+      DIRECT_URL: postgresql://quantroapex:quantroapex_dev@postgres:5432/quantroapex?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   data-pipeline-setup:
     profiles: ["data-setup"]
     build: ../services/data-pipeline

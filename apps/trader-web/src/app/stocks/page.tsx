@@ -1,11 +1,11 @@
 'use client';
 
 import { AppShell } from '@/components/layout/AppShell';
-import { useStrategies, useAnalytics, useActivityFeed, useMe } from '@/lib/queries';
+import { useStrategies, useAnalytics, useActivityFeed, useMe, AnalyticsData } from '@/lib/queries';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, BarChart3, Zap, ArrowRight, Play, Square } from 'lucide-react';
+import { BarChart3, Zap, Play, Square } from 'lucide-react';
 import { useToggleApex } from '@/lib/queries';
 
 type Tab = 'overview' | 'agent' | 'strategies' | 'analytics';
@@ -134,14 +134,6 @@ interface TradeItem {
   pnl?: number | null;
 }
 
-interface AnalyticsData {
-  winRate: number;
-  totalTrades: number;
-  avgHoldTime: number;
-  sharpeRatio?: number | null;
-  maxDrawdown?: number | null;
-  trades: TradeItem[];
-}
 
 interface StocksOverviewProps {
   isActive: boolean;
@@ -208,20 +200,20 @@ function StocksOverview({ isActive, agentState, analyticsData, feedData, onToggl
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-2xl border border-apex-border bg-apex-surface p-4">
           <p className="text-xs font-medium uppercase tracking-wider text-apex-muted">Win Rate</p>
-          <p className="mt-2 text-2xl font-bold text-apex-text">
-            {analyticsData ? `${(analyticsData.winRate * 100).toFixed(1)}%` : '—'}
+          <p className="mt-2 text-xl font-bold text-apex-text">
+            {analyticsData?.winRate != null ? `${(analyticsData.winRate * 100).toFixed(1)}%` : 'Not enough history yet'}
           </p>
         </div>
         <div className="rounded-2xl border border-apex-border bg-apex-surface p-4">
           <p className="text-xs font-medium uppercase tracking-wider text-apex-muted">Total Trades</p>
-          <p className="mt-2 text-2xl font-bold text-apex-text">
+          <p className="mt-2 text-xl font-bold text-apex-text">
             {analyticsData?.totalTrades ?? '—'}
           </p>
         </div>
         <div className="rounded-2xl border border-apex-border bg-apex-surface p-4">
           <p className="text-xs font-medium uppercase tracking-wider text-apex-muted">Sharpe Ratio</p>
-          <p className="mt-2 text-2xl font-bold text-apex-text">
-            {analyticsData?.sharpeRatio?.toFixed(2) ?? '—'}
+          <p className="mt-2 text-xl font-bold text-apex-text">
+            {analyticsData?.sharpeRatio != null ? analyticsData.sharpeRatio.toFixed(2) : 'Not enough history yet'}
           </p>
         </div>
       </div>
@@ -385,10 +377,16 @@ function AnalyticsTab({ data }: { data?: AnalyticsData }) {
     <div className="space-y-5">
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Win Rate', value: `${(data.winRate * 100).toFixed(1)}%` },
+          {
+            label: 'Win Rate',
+            value: data.winRate != null ? `${(data.winRate * 100).toFixed(1)}%` : 'Not enough history yet',
+          },
           { label: 'Total Trades', value: String(data.totalTrades) },
           { label: 'Avg Hold', value: `${data.avgHoldTime}h` },
-          { label: 'Max Drawdown', value: data.maxDrawdown ? `${data.maxDrawdown.toFixed(1)}%` : '—' },
+          {
+            label: 'Max Drawdown',
+            value: data.maxDrawdown != null ? `${data.maxDrawdown.toFixed(1)}%` : 'Not enough history yet',
+          },
         ].map((m) => (
           <div key={m.label} className="rounded-2xl border border-apex-border bg-apex-surface p-4">
             <p className="text-xs font-medium uppercase tracking-wider text-apex-muted">{m.label}</p>

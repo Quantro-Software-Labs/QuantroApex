@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import time
 from datetime import datetime, timezone
 
+import joblib
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,8 +18,9 @@ from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader
 
 from config import get_settings
+from processing.features import FEATURE_KEYS
 from storage.timescale import TimescaleReader, TimescaleWriter
-from training.dataset import OUTCOME_MAP, MarketDataset, sample_label
+from training.dataset import OUTCOME_MAP, MarketDataset, fit_dataset_scaler, sample_label
 from training.model import GlobalBrain
 from training.sequences import attach_feature_sequences, filter_sequence_ready
 
@@ -93,7 +96,9 @@ class GlobalBrainTrainer:
         logger.info(f"Training on: {self.device}")
         self.reader = TimescaleReader()
         self.writer = TimescaleWriter()
-        self.model = GlobalBrain().to(self.device)
+        self.input_dim = len(FEATURE_KEYS)
+        self.model = GlobalBrain(input_dim=self.input_dim).to(self.device)
+        self.scaler = None
         self.last_checkpoint: str | None = None
         self._archived_latest = False
 
@@ -170,13 +175,28 @@ class GlobalBrainTrainer:
             f"Time split — train={len(train_samples):,} val={len(val_samples):,}"
         )
 
+        # Fit feature scaler ONLY on the training split — zero leakage into validation
+        self.scaler = fit_dataset_scaler(train_samples, input_dim=self.input_dim)
+
         train_loader = DataLoader(
-            MarketDataset(train_samples, add_noise=True),
+            MarketDataset(
+                train_samples,
+                seq_len=60,
+                input_dim=self.input_dim,
+                add_noise=True,
+                scaler=self.scaler,
+            ),
             batch_size=min(batch_size, len(train_samples)),
             shuffle=True,
         )
         val_loader = DataLoader(
-            MarketDataset(val_samples, add_noise=False),
+            MarketDataset(
+                val_samples,
+                seq_len=60,
+                input_dim=self.input_dim,
+                add_noise=False,
+                scaler=self.scaler,
+            ),
             batch_size=min(batch_size, len(val_samples)),
         )
 
@@ -238,7 +258,7 @@ class GlobalBrainTrainer:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_train_loss = train_loss
-                self.save_checkpoint(epoch, train_loss, val_loss, version)
+                self.save_checkpoint(epoch, train_loss, val_loss, version, train_samples=train_samples)
 
         checkpoint = self.last_checkpoint or ""
         await self.writer.complete_training_run(
@@ -277,25 +297,94 @@ class GlobalBrainTrainer:
         self._archived_latest = True
 
     def save_checkpoint(
-        self, epoch: int, train_loss: float, val_loss: float, version: str
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: float,
+        version: str,
+        train_samples: list[dict] | None = None,
     ) -> None:
         checkpoint_dir = self.settings.checkpoint_dir
         os.makedirs(checkpoint_dir, exist_ok=True)
+
+        git_commit = "unknown"
+        try:
+            import subprocess
+            git_commit = (
+                subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], timeout=2
+                )
+                .decode()
+                .strip()
+            )
+        except Exception:
+            pass
+
+        date_range = {}
+        if train_samples:
+            raw_dates = [s["entry_time"] for s in train_samples if s.get("entry_time")]
+            if raw_dates:
+                t_min = min(raw_dates)
+                t_max = max(raw_dates)
+                date_range = {
+                    "start": t_min.isoformat() if hasattr(t_min, "isoformat") else str(t_min),
+                    "end": t_max.isoformat() if hasattr(t_max, "isoformat") else str(t_max),
+                }
+
+        model_config = {
+            "input_dim": len(FEATURE_KEYS),
+            "d_model": 128,
+            "nhead": 4,
+            "num_layers": 3,
+            "seq_len": 60,
+            "num_classes": 2,
+            "label_map": OUTCOME_MAP,
+            "features": list(FEATURE_KEYS),
+        }
+
         payload = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "train_loss": train_loss,
             "val_loss": val_loss,
-            "model_config": {
-                "input_dim": 14,
-                "d_model": 128,
-                "nhead": 4,
-                "num_layers": 3,
-                "seq_len": 60,
-                "num_classes": 2,
-                "label_map": OUTCOME_MAP,
-            },
+            "model_config": model_config,
+            "feature_list": list(FEATURE_KEYS),
+            "git_commit": git_commit,
+            "data_date_range": date_range,
         }
+
+        # Create versioned directory checkpoint
+        ts = int(time.time())
+        versioned_dir = os.path.join(checkpoint_dir, f"v_{version}_{ts}")
+        os.makedirs(versioned_dir, exist_ok=True)
+
+        # 1. Weights
+        torch.save(payload, os.path.join(versioned_dir, "model.pt"))
+        # 2. Fitted scaler
+        if self.scaler is not None:
+            joblib.dump(self.scaler, os.path.join(versioned_dir, "scaler.joblib"))
+        # 3. Feature list with order
+        with open(os.path.join(versioned_dir, "feature_list.json"), "w", encoding="utf-8") as f:
+            json.dump({"features": list(FEATURE_KEYS)}, f, indent=2)
+        # 4. Config
+        with open(os.path.join(versioned_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(model_config, f, indent=2)
+        # 5. Manifest
+        manifest = {
+            "version": version,
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "input_dim": len(FEATURE_KEYS),
+            "features": list(FEATURE_KEYS),
+            "git_commit": git_commit,
+            "data_date_range": date_range,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(os.path.join(versioned_dir, "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+
+        # Legacy file paths for backward compatibility
         path = os.path.join(
             checkpoint_dir,
             f"global_brain_{version}_e{epoch}_valloss{val_loss:.4f}.pt",
@@ -303,5 +392,5 @@ class GlobalBrainTrainer:
         torch.save(payload, path)
         latest = os.path.join(checkpoint_dir, "global_brain_latest.pt")
         torch.save(payload, latest)
-        self.last_checkpoint = path
-        logger.info(f"Checkpoint saved: {path}")
+        self.last_checkpoint = versioned_dir
+        logger.info(f"Checkpoint saved in versioned directory: {versioned_dir}")

@@ -54,7 +54,7 @@ pkill -f ".venv/bin/python main.py all" >/dev/null 2>&1 || true
 sleep 1
 
 # 1. Start API Gateway
-npm run dev &
+(pnpm --filter @quantroapex/api-gateway dev || npm run dev) &
 PIDS+=($!)
 
 # 2. Start AI Service

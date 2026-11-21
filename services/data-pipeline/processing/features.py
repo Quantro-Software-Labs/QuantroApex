@@ -24,13 +24,9 @@ FEATURE_KEYS = [
     "macd",
     "macd_signal",
     "macd_hist",
-    "ema20",
-    "ema50",
-    "ema200",
     "price_vs_ema20",
     "price_vs_ema50",
     "price_vs_ema200",
-    "atr",
     "atr_pct",
     "bb_position",
     "volume_ratio",
@@ -44,15 +40,40 @@ def _ema(series: np.ndarray, period: int) -> np.ndarray:
     return s.ewm(span=period, adjust=False).mean().to_numpy()
 
 
+def wilder_rsi(series: np.ndarray, period: int = 14) -> np.ndarray:
+    """RSI calculation using Wilder's original exponential smoothing."""
+    n = len(series)
+    out = np.full(n, np.nan, dtype=np.float64)
+    if n <= period:
+        return out
+    diff = np.diff(series.astype(np.float64))
+    gains = np.maximum(diff, 0.0)
+    losses = np.maximum(-diff, 0.0)
+
+    avg_gain = float(np.mean(gains[:period]))
+    avg_loss = float(np.mean(losses[:period]))
+    if avg_loss == 0.0:
+        out[period] = 100.0 if avg_gain > 0.0 else 50.0
+    else:
+        rs = avg_gain / avg_loss
+        out[period] = 100.0 - (100.0 / (1.0 + rs))
+
+    for i in range(period, len(diff)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        idx = i + 1
+        if avg_loss == 0.0:
+            out[idx] = 100.0 if avg_gain > 0.0 else 50.0
+        else:
+            rs = avg_gain / avg_loss
+            out[idx] = 100.0 - (100.0 / (1.0 + rs))
+    return out
+
+
 def _rsi(series: np.ndarray, period: int = 14) -> np.ndarray:
     if TALIB_AVAILABLE:
-        return _talib.RSI(series, period)
-    s = pd.Series(series)
-    delta = s.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
-    rs = gain / loss.replace(0, np.nan)
-    return (100 - (100 / (1 + rs))).to_numpy()
+        return _talib.RSI(series.astype(np.float64), period)
+    return wilder_rsi(series, period)
 
 
 def _macd(series: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -128,31 +149,34 @@ def extract_indicator_features(df: pd.DataFrame, idx: int) -> dict[str, Any]:
         "macd": _safe(macd, idx),
         "macd_signal": _safe(macd_signal, idx),
         "macd_hist": _safe(macd_hist, idx),
-        "ema20": _safe(ema20, idx),
-        "ema50": _safe(ema50, idx),
-        "ema200": _safe(ema200, idx),
         "price_vs_ema20": vs_ema(ema20),
         "price_vs_ema50": vs_ema(ema50),
         "price_vs_ema200": vs_ema(ema200),
-        "atr": _safe(atr, idx),
-        "atr_pct": float(atr[idx] / close[idx]) if _safe(atr, idx) and close[idx] else None,
-        "bb_position": bb_pos,
+        "atr_pct": float(atr[idx] / close[idx]) if _safe(atr, idx) and close[idx] else 0.0,
+        "bb_position": bb_pos if bb_pos is not None else 0.0,
         "volume_ratio": volume_ratio,
     }
 
 
-def annotate_smc(df: pd.DataFrame, lookback: int = 2) -> dict[str, Any]:
+def annotate_smc(df: pd.DataFrame, lookback: int = 2, current_idx: int | None = None) -> dict[str, Any]:
     """
     Lightweight Smart Money Concepts annotations on an OHLCV frame.
-    Returns structure summary, recent order-block / FVG proxies, and liquidity swings.
+    Strictly causal: if current_idx is provided, evaluates features only up to current_idx.
+    Swings confirmed by `lookback` subsequent bars only become visible at bar i + lookback <= current_idx.
     """
-    if len(df) < lookback * 2 + 5:
-        return {"structure": "UNKNOWN", "order_blocks": [], "fvgs": [], "liquidity": []}
+    if current_idx is None:
+        current_idx = len(df) - 1
+    if current_idx < 0:
+        return {"structure": "UNKNOWN", "order_blocks": [], "fvgs": [], "liquidity": {"eq_highs": [], "eq_lows": []}}
 
-    high = df["high"].to_numpy(dtype=np.float64)
-    low = df["low"].to_numpy(dtype=np.float64)
-    close = df["close"].to_numpy(dtype=np.float64)
-    n = len(df)
+    sub_df = df.iloc[: current_idx + 1]
+    n = len(sub_df)
+    if n < lookback * 2 + 5:
+        return {"structure": "UNKNOWN", "order_blocks": [], "fvgs": [], "liquidity": {"eq_highs": [], "eq_lows": []}}
+
+    high = sub_df["high"].to_numpy(dtype=np.float64)
+    low = sub_df["low"].to_numpy(dtype=np.float64)
+    close = sub_df["close"].to_numpy(dtype=np.float64)
 
     swings_h: list[dict[str, Any]] = []
     swings_l: list[dict[str, Any]] = []
@@ -231,13 +255,9 @@ def annotate_smc(df: pd.DataFrame, lookback: int = 2) -> dict[str, Any]:
 
 
 def features_to_vector(features: dict[str, Any]) -> np.ndarray:
-    """Convert feature dict to fixed-length float32 vector (len=14)."""
+    """Convert feature dict to fixed-length float32 vector (len=10)."""
     vec = []
     for key in FEATURE_KEYS:
-        # Absolute EMA levels are scale-dependent — drop them (keep price_vs_*)
-        if key in ("ema20", "ema50", "ema200"):
-            vec.append(0.0)
-            continue
         val = features.get(key)
         if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
             vec.append(0.0)
@@ -250,7 +270,7 @@ def features_to_vector(features: dict[str, Any]) -> np.ndarray:
 
 def precompute_feature_matrix(df: pd.DataFrame) -> np.ndarray:
     """
-    Compute (n_bars, 14) feature matrix once for an OHLCV frame.
+    Compute (n_bars, 10) feature matrix once for an OHLCV frame.
     Much faster than calling extract_indicator_features per bar.
     """
     n = len(df)
@@ -302,21 +322,15 @@ def precompute_feature_matrix(df: pd.DataFrame) -> np.ndarray:
             else 0.0
         )
 
-        # Absolute EMA levels explode across FX/crypto scales — use 0 here;
-        # relative price_vs_ema* columns already carry the trend signal.
         mat[i] = np.asarray(
             [
                 safe(rsi),
                 safe(macd),
                 safe(macd_signal),
                 safe(macd_hist),
-                0.0,
-                0.0,
-                0.0,
                 vs_ema(ema20),
                 vs_ema(ema50),
                 vs_ema(ema200),
-                safe(atr) / close[i] if close[i] else 0.0,  # scale ATR by price
                 atr_pct,
                 bb_pos,
                 volume_ratio,
@@ -331,9 +345,10 @@ def precompute_feature_matrix(df: pd.DataFrame) -> np.ndarray:
 def sequence_from_matrix(
     matrix: np.ndarray, end_idx: int, seq_len: int = 60
 ) -> np.ndarray:
-    """Slice/pad a (seq_len, 14) window ending at end_idx from a precomputed matrix."""
+    """Slice/pad a (seq_len, 10) window ending at end_idx from a precomputed matrix."""
+    dim = matrix.shape[1] if matrix.ndim == 2 and matrix.shape[1] > 0 else len(FEATURE_KEYS)
     if matrix.size == 0 or end_idx < 0:
-        return np.zeros((seq_len, matrix.shape[1] if matrix.ndim == 2 else 14), dtype=np.float32)
+        return np.zeros((seq_len, dim), dtype=np.float32)
     start = max(0, end_idx - seq_len + 1)
     seq = matrix[start : end_idx + 1]
     if len(seq) < seq_len:

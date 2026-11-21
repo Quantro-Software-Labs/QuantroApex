@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 loadEnv({ path: resolve(process.cwd(), '../../.env') });
 loadEnv({ path: resolve(process.cwd(), '.env') });
 
+if (!process.env.NODE_ENV) {
+  throw new Error('NODE_ENV environment variable must be set. Server refusing to start.');
+}
+
 function requireEnv(key: string, fallback?: string): string {
   const value = process.env[key] ?? fallback;
   if (!value) {
@@ -12,11 +16,26 @@ function requireEnv(key: string, fallback?: string): string {
   return value;
 }
 
+function parsePlanPrices(): Record<string, { amountKobo: number; currency: string; planName: string }> {
+  if (process.env.PLAN_PRICES_JSON) {
+    try {
+      return JSON.parse(process.env.PLAN_PRICES_JSON);
+    } catch {
+      // fallback to default
+    }
+  }
+  return {
+    CORE: { amountKobo: 2900000, currency: 'NGN', planName: 'Core Plan' },
+    PRO: { amountKobo: 7900000, currency: 'NGN', planName: 'Pro Plan' },
+    ELITE: { amountKobo: 19900000, currency: 'NGN', planName: 'Elite Plan' },
+  };
+}
+
 export const config = {
   port: parseInt(process.env.PORT ?? '3000', 10),
   host: process.env.HOST ?? '0.0.0.0',
-  nodeEnv: process.env.NODE_ENV ?? 'development',
-  isDev: (process.env.NODE_ENV ?? 'development') === 'development',
+  nodeEnv: process.env.NODE_ENV,
+  isDev: process.env.NODE_ENV === 'development',
 
   databaseUrl: requireEnv(
     'DATABASE_URL',
@@ -42,6 +61,32 @@ export const config = {
     baseUrl: process.env.ALPACA_BASE_URL ?? 'https://paper-api.alpaca.markets/v2',
     dataUrl: process.env.ALPACA_DATA_URL ?? 'https://data.alpaca.markets/v2',
   },
+
+  marketData: {
+    alpacaKey: process.env.MARKET_DATA_ALPACA_KEY ?? '',
+    alpacaSecret: process.env.MARKET_DATA_ALPACA_SECRET ?? '',
+    cryptoExchange: process.env.CRYPTO_QUOTE_EXCHANGE ?? 'kraken',
+  },
+
+  trading: {
+    liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
+    spreadAndSlippage: {
+      stocks: {
+        halfSpreadBps: parseFloat(process.env.STOCKS_HALF_SPREAD_BPS ?? '2.5'),
+        slippageBps: parseFloat(process.env.STOCKS_SLIPPAGE_BPS ?? '5.0'),
+      },
+      crypto: {
+        halfSpreadBps: parseFloat(process.env.CRYPTO_HALF_SPREAD_BPS ?? '5.0'),
+        slippageBps: parseFloat(process.env.CRYPTO_SLIPPAGE_BPS ?? '10.0'),
+      },
+      forex: {
+        halfSpreadBps: parseFloat(process.env.FOREX_HALF_SPREAD_BPS ?? '1.5'),
+        slippageBps: parseFloat(process.env.FOREX_SLIPPAGE_BPS ?? '2.0'),
+      },
+    },
+  },
+
+  planPrices: parsePlanPrices(),
 
   polygon: {
     apiKey: process.env.POLYGON_API_KEY ?? '',

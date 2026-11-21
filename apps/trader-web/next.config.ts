@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // Output standalone build for containerized deployments
+  output: 'standalone',
+
   // Enable React strict mode for catching common issues
   reactStrictMode: true,
 

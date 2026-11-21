@@ -19,10 +19,12 @@ const querySchema = z.object({
 
 async function resolveUserIdFromToken(token: string): Promise<string | null> {
   try {
-    if (
-      (config.isDev || process.env.NODE_ENV === 'test') &&
-      token.startsWith('firebase_dev:')
-    ) {
+    const allowDevAuth =
+      process.env.NODE_ENV === 'test' && process.env.ALLOW_DEV_AUTH === 'true';
+    if (token.startsWith('firebase_dev:')) {
+      if (!allowDevAuth) {
+        return null;
+      }
       const parts = token.split(':');
       const firebaseUid = parts[1] || '';
       const contact = parts[2] || 'dev@quantroapex.local';

@@ -52,7 +52,13 @@ async def health():
             "paper_universe_size": len(PAPER_UNIVERSE),
         }
     except Exception as exc:
-        return {"status": "degraded", "service": "data-pipeline", "error": str(exc)}
+        return {
+            "status": "degraded",
+            "service": "data-pipeline",
+            "inference_gate": INFERENCE_MIN_WIN_PROB,
+            "paper_universe_size": len(PAPER_UNIVERSE),
+            "error": str(exc),
+        }
 
 
 @app.get("/market-data/{symbol}/{timeframe}")

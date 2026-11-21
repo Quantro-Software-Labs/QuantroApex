@@ -16,7 +16,7 @@ class GlobalBrain(nn.Module):
 
     def __init__(
         self,
-        input_dim: int = 14,
+        input_dim: int = 10,
         d_model: int = 128,
         nhead: int = 4,
         num_layers: int = 3,

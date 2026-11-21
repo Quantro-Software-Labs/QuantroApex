@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   IBrokerClient,
   BrokerAccount,
@@ -37,6 +38,12 @@ export class OandaClient implements IBrokerClient {
     return !!(this.apiKey && this.accountId);
   }
 
+  private assertConfiguredOrTest(action: string): void {
+    if (!this.isConfigured() && process.env.NODE_ENV !== 'test') {
+      throw new Error(`OandaClient.${action} failed: credentials not configured. Real broker required outside test mode.`);
+    }
+  }
+
   private headers(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.apiKey || ''}`,
@@ -49,6 +56,7 @@ export class OandaClient implements IBrokerClient {
   }
 
   async getAccount(): Promise<BrokerAccount> {
+    this.assertConfiguredOrTest('getAccount');
     if (!this.isConfigured()) {
       let totalPositionValue = 0;
       this.mockPositions.forEach((pos) => {
@@ -84,6 +92,7 @@ export class OandaClient implements IBrokerClient {
   }
 
   async getPositions(): Promise<BrokerPosition[]> {
+    this.assertConfiguredOrTest('getPositions');
     if (!this.isConfigured()) {
       const positions: BrokerPosition[] = [];
       this.mockPositions.forEach((pos, symbol) => {
@@ -130,6 +139,7 @@ export class OandaClient implements IBrokerClient {
   }
 
   async createOrder(params: CreateOrderParams): Promise<BrokerOrder> {
+    this.assertConfiguredOrTest('createOrder');
     if (!this.isConfigured()) {
       const fillPrice = params.limitPrice || params.estimatedPrice || 1.1;
       const orderValue = fillPrice * params.qty;
@@ -154,7 +164,7 @@ export class OandaClient implements IBrokerClient {
       }
 
       return {
-        id: `mock_oanda_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: `mock_oanda_${Date.now()}_${randomUUID().slice(0, 8)}`,
         clientOrderId: params.idempotencyKey,
         symbol: params.symbol,
         side: params.side,
@@ -235,6 +245,7 @@ export class OandaClient implements IBrokerClient {
   }
 
   async getOrder(orderId: string): Promise<BrokerOrder> {
+    this.assertConfiguredOrTest('getOrder');
     if (!this.isConfigured()) {
       return {
         id: orderId,
@@ -289,6 +300,7 @@ export class OandaClient implements IBrokerClient {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    this.assertConfiguredOrTest('cancelOrder');
     if (!this.isConfigured()) {
       return;
     }

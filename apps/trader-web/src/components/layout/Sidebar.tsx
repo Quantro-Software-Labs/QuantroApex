@@ -6,8 +6,6 @@ import { useCallback } from 'react';
 import {
   LayoutDashboard,
   TrendingUp,
-  Bitcoin,
-  DollarSign,
   BarChart3,
   Zap,
   MessageSquare,

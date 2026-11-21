@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { buildApp } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 import { FastifyInstance } from 'fastify';
 import { registerTestUser } from './helpers/firebase_auth.js';
+import { setMockRealQuote, clearMockRealQuotes } from '../lib/market/quote_engine.js';
 
 describe('Performance & Analytics Endpoints', () => {
   let app: FastifyInstance;
@@ -22,20 +23,40 @@ describe('Performance & Analytics Endpoints', () => {
     accessToken = session.accessToken;
   });
 
+  afterEach(() => {
+    clearMockRealQuotes();
+  });
+
   it('should fetch performance metrics', async () => {
-    // Execute a trade
-    await app.inject({
-      method: 'POST',
-      url: '/execution/order',
-      headers: { authorization: `Bearer ${accessToken}` },
-      payload: {
-        symbol: 'AAPL',
-        side: 'BUY',
-        quantity: 10,
-        limitPrice: 150,
-        assetClass: 'STOCKS',
-      },
+    const user = await prisma.user.findFirst({ where: { email: 'trader@analyticstest.com' } });
+    const portfolio = await prisma.portfolio.findUnique({
+      where: { userId_mode: { userId: user!.id, mode: 'SIM' } },
     });
+
+    // Create 10 closed trades so winRate is computed
+    for (let i = 0; i < 10; i++) {
+      const order = await prisma.order.create({
+        data: {
+          userId: user!.id,
+          symbol: 'AAPL',
+          side: 'SELL',
+          orderType: 'MARKET',
+          quantity: 1,
+          status: 'FILLED',
+          isSimulated: true,
+          assetClass: 'STOCKS',
+        },
+      });
+      await prisma.trade.create({
+        data: {
+          orderId: order.id,
+          fillPrice: 200,
+          fillQuantity: 1,
+          realizedPnl: 50,
+          filledAt: new Date(Date.now() - (10 - i) * 3600000),
+        },
+      });
+    }
 
     const response = await app.inject({
       method: 'GET',
@@ -50,6 +71,26 @@ describe('Performance & Analytics Endpoints', () => {
   });
 
   it('should fetch equity curve time series for 1M timeframe', async () => {
+    const user = await prisma.user.findFirst({ where: { email: 'trader@analyticstest.com' } });
+    const portfolio = await prisma.portfolio.findUnique({
+      where: { userId_mode: { userId: user!.id, mode: 'SIM' } },
+    });
+
+    // Create 30 equity snapshots within the past month
+    const now = Date.now();
+    for (let i = 29; i >= 0; i--) {
+      await prisma.equitySnapshot.create({
+        data: {
+          userId: user!.id,
+          portfolioId: portfolio!.id,
+          mode: 'SIM',
+          equity: 100000 + (30 - i) * 100,
+          cashBalance: 100000,
+          createdAt: new Date(now - i * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+
     const response = await app.inject({
       method: 'GET',
       url: '/analytics/equity-curve?timeframe=1M',

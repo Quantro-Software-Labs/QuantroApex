@@ -46,8 +46,12 @@ CREATE TABLE IF NOT EXISTS labelled_samples (
   hold_duration   INTEGER,
   market_regime   TEXT,
   features        JSONB           NOT NULL,
-  signal_strength DOUBLE PRECISION
+  signal_strength DOUBLE PRECISION,
+  timestamp       TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_labelled_samples_sym_ex_tf_ts
+  ON labelled_samples (symbol, exchange, timeframe, timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_samples_strategy
   ON labelled_samples (strategy_id, symbol, timeframe);
@@ -99,8 +103,13 @@ CREATE TABLE IF NOT EXISTS paper_signals (
   resolved        BOOLEAN       NOT NULL DEFAULT FALSE,
   outcome         TEXT,
   pnl_pct         DOUBLE PRECISION,
+  direction       TEXT          NOT NULL DEFAULT 'BUY',
+  bar_timestamp   TIMESTAMPTZ,
   meta            JSONB
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_signals_sym_dir_bar
+  ON paper_signals (symbol, direction, bar_timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_paper_signals_created
   ON paper_signals (created_at DESC);

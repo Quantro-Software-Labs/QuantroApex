@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -16,7 +17,11 @@ from inference.policy import (
     is_inference_allowed,
     passes_confidence_gate,
 )
-from processing.features import precompute_feature_matrix, sequence_from_matrix
+from processing.features import (
+    FEATURE_KEYS,
+    precompute_feature_matrix,
+    sequence_from_matrix,
+)
 from storage.timescale import TimescaleReader
 from training.model import GlobalBrain
 
@@ -76,21 +81,60 @@ class GlobalBrainInference:
         )
         self._model: GlobalBrain | None = None
         self._seq_len = 60
-        self._input_dim = 14
+        self._input_dim = len(FEATURE_KEYS)
 
     def load(self) -> GlobalBrain:
         if self._model is not None:
             return self._model
         path = self.checkpoint_path
-        if not os.path.isfile(path):
+        if not os.path.exists(path):
             raise FileNotFoundError(
                 f"Checkpoint not found: {path}. "
                 "Place global_brain_latest.pt in checkpoints/"
             )
-        payload = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Check if path is a directory checkpoint
+        manifest_path = (
+            os.path.join(path, "manifest.json")
+            if os.path.isdir(path)
+            else os.path.join(os.path.dirname(path), "manifest.json")
+        )
+        weights_path = (
+            os.path.join(path, "model.pt")
+            if os.path.isdir(path)
+            else path
+        )
+
+        if os.path.isfile(manifest_path):
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                manifest_features = manifest.get("features")
+                if manifest_features and manifest_features != list(FEATURE_KEYS):
+                    raise ValueError(
+                        f"Checkpoint feature mismatch: checkpoint features {manifest_features} != expected {FEATURE_KEYS}"
+                    )
+            except Exception as e:
+                if isinstance(e, ValueError):
+                    raise
+                logger.warning(f"Could not parse manifest at {manifest_path}: {e}")
+
+        payload = torch.load(weights_path, map_location=self.device, weights_only=False)
         cfg = payload.get("model_config") or {}
         self._seq_len = int(cfg.get("seq_len", 60))
-        self._input_dim = int(cfg.get("input_dim", 14))
+        self._input_dim = int(cfg.get("input_dim", len(FEATURE_KEYS)))
+
+        # Verify feature list / input_dim inside checkpoint payload
+        payload_features = payload.get("feature_list")
+        if payload_features and payload_features != list(FEATURE_KEYS):
+            raise ValueError(
+                f"Checkpoint payload feature mismatch: {payload_features} != {FEATURE_KEYS}"
+            )
+        if self._input_dim != len(FEATURE_KEYS):
+            raise ValueError(
+                f"Feature dimension mismatch: checkpoint has input_dim={self._input_dim}, expected {len(FEATURE_KEYS)}"
+            )
+
         model = GlobalBrain(
             input_dim=self._input_dim,
             d_model=int(cfg.get("d_model", 128)),
@@ -161,6 +205,25 @@ class GlobalBrainInference:
                 gate=self.min_win_prob,
                 mode="paper",
             )
+
+        # Train/inference match: gate inference to the exact same strategy rule signal bars as training
+        if self.settings.inference_signal_gating:
+            from processing.labeller import check_rule_signal
+            if not check_rule_signal(df, asset_class=asset_class, idx=-1):
+                return InferenceResult(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    asset_class=asset_class,
+                    allowed=True,
+                    deny_reason="no strategy rule signal fired on current bar",
+                    win_prob=0.0,
+                    loss_prob=1.0,
+                    head_confidence=0.0,
+                    predicted_class="NO_SIGNAL",
+                    take_trade=False,
+                    gate=self.min_win_prob,
+                    mode="paper",
+                )
 
         matrix = precompute_feature_matrix(df)
         seq = sequence_from_matrix(matrix, len(matrix) - 1, seq_len=self._seq_len)

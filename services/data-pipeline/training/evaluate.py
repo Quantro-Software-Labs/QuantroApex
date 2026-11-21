@@ -13,6 +13,7 @@ from loguru import logger
 from torch.utils.data import DataLoader
 
 from config import get_settings
+from processing.features import FEATURE_KEYS
 from storage.timescale import TimescaleReader
 from training.dataset import MarketDataset, sample_label
 from training.model import GlobalBrain
@@ -206,7 +207,7 @@ class GlobalBrainEvaluator:
         payload = torch.load(path, map_location=self.device, weights_only=False)
         cfg = payload.get("model_config") or {}
         model = GlobalBrain(
-            input_dim=int(cfg.get("input_dim", 14)),
+            input_dim=int(cfg.get("input_dim", len(FEATURE_KEYS))),
             d_model=int(cfg.get("d_model", 128)),
             nhead=int(cfg.get("nhead", 4)),
             num_layers=int(cfg.get("num_layers", 3)),
@@ -445,30 +446,63 @@ class GlobalBrainEvaluator:
         report["holdout_segments"] = segments
 
         if walk_forward:
-            folds = walk_forward_folds(samples, n_folds=n_folds)
-            logger.info(f"Walk-forward: {len(folds)} folds (frozen checkpoint)")
+            from evaluation.walk_forward import (
+                compute_purged_walk_forward_folds,
+                fit_dataset_scaler,
+                predict_test_fold,
+                train_fold_model,
+            )
+
+            folds, _ = compute_purged_walk_forward_folds(samples, n_folds=n_folds)
+            logger.info(f"Purged walk-forward: {len(folds)} folds (fit scaler & model per fold)")
             fold_summaries = []
-            for i, (_train, test) in enumerate(folds, start=1):
-                rows = self.score_baselines(test, fee)
-                pred = self.predict(model, test, min_win_prob=0.0)
-                rows.append(
-                    self.score_predictor("global_brain", test, pred, fee)
+            for train_part, test, meta in folds:
+                i = meta["fold"]
+                scaler = fit_dataset_scaler(train_part, input_dim=len(FEATURE_KEYS))
+                fold_model = train_fold_model(
+                    train_part,
+                    scaler=scaler,
+                    input_dim=len(FEATURE_KEYS),
+                    epochs=5,
+                    device=self.device,
                 )
-                pred_g = self.predict(model, test, min_win_prob=min_win_prob)
+                rows = self.score_baselines(test, fee)
+                preds_raw, _ = predict_test_fold(
+                    fold_model,
+                    test,
+                    scaler=scaler,
+                    input_dim=len(FEATURE_KEYS),
+                    min_win_prob=0.0,
+                    device=self.device,
+                )
+                rows.append(
+                    self.score_predictor(
+                        "global_brain", test, np.array(preds_raw, dtype=np.int64), fee
+                    )
+                )
+                preds_g, _ = predict_test_fold(
+                    fold_model,
+                    test,
+                    scaler=scaler,
+                    input_dim=len(FEATURE_KEYS),
+                    min_win_prob=min_win_prob,
+                    device=self.device,
+                )
                 rows.append(
                     self.score_predictor(
                         f"global_brain_p>={min_win_prob:.2f}",
                         test,
-                        pred_g,
+                        np.array(preds_g, dtype=np.int64),
                         fee,
                     )
                 )
                 fold_summaries.append(
                     {
                         "fold": i,
+                        "n_train": len(train_part),
                         "n_test": len(test),
-                        "from": _entry_time_key(test[0]).isoformat(),
-                        "to": _entry_time_key(test[-1]).isoformat(),
+                        "from": _entry_time_key(test[0]).isoformat() if test else "",
+                        "to": _entry_time_key(test[-1]).isoformat() if test else "",
                         "results": rows,
                     }
                 )

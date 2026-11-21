@@ -15,6 +15,8 @@ import {
 } from '../lib/db/repos.js';
 import type { DigestInterval } from '../lib/db/types.js';
 import { getUserId } from '../plugins/auth.js';
+import { safeProfile } from './auth.js';
+import { percentInputSchema, toDecimalFraction } from '../lib/risk/limit_helpers.js';
 
 const pathSchema = z.object({
   path: z.enum(['NEWCOMER', 'EXPRESS']),
@@ -38,8 +40,8 @@ const completeSchema = z.object({
   strategyId: z.string().optional(),
   riskVault: z.object({
     dailyLossLimit: z.number().positive(),
-    maxDrawdown: z.number().min(0.01).max(100.0),
-    perTradeExposure: z.number().min(0.01).max(100.0),
+    maxDrawdown: percentInputSchema,
+    perTradeExposure: percentInputSchema,
     cryptoEnabled: z.boolean().default(false),
     stocksEnabled: z.boolean().default(true),
     forexEnabled: z.boolean().default(false),
@@ -69,7 +71,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
       experienceLevel: user.experienceLevel,
       onboardingCompletedAt: user.onboardingCompletedAt,
       progress: user.onboardingProgress,
-      profile: user.profile,
+      profile: safeProfile(user.profile),
       riskVault: user.riskVault,
       notificationPrefs: user.notificationPrefs,
     });
@@ -131,13 +133,10 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const data = parsed.data;
     const now = new Date();
 
-    const maxDrawdown = data.riskVault.maxDrawdown > 1.0
-      ? data.riskVault.maxDrawdown / 100.0
-      : data.riskVault.maxDrawdown;
-
-    const perTradeExposure = data.riskVault.perTradeExposure > 1.0
-      ? data.riskVault.perTradeExposure / 100.0
-      : data.riskVault.perTradeExposure;
+    // Percent inputs (0 < value <= 100): divide by 100 to store decimal fraction.
+    // 1 is 1% (0.01), never 100%.
+    const maxDrawdown = toDecimalFraction(data.riskVault.maxDrawdown);
+    const perTradeExposure = toDecimalFraction(data.riskVault.perTradeExposure);
 
     // 1. Update User
     await updateUser(userId, {
@@ -154,6 +153,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
     });
 
     // 3. Upsert four Risk Vaults (STOCKS, CRYPTO, FOREX, GLOBAL)
+    // Store exactly what the user chose — no loosening multipliers!
     const vaultBase = {
       dailyLossLimit: data.riskVault.dailyLossLimit,
       maxDrawdown,
@@ -172,8 +172,6 @@ export async function onboardingRoutes(app: FastifyInstance) {
         ...vaultBase,
         assetClass: 'CRYPTO',
         assetsEnabled: data.riskVault.cryptoEnabled,
-        dailyLossLimit: data.riskVault.dailyLossLimit,
-        maxDrawdown: Math.min(maxDrawdown * 1.25, 0.5),
       }),
       upsertRiskVault(userId, {
         ...vaultBase,
@@ -184,9 +182,6 @@ export async function onboardingRoutes(app: FastifyInstance) {
         ...vaultBase,
         assetClass: 'GLOBAL',
         assetsEnabled: true,
-        dailyLossLimit: data.riskVault.dailyLossLimit * 2,
-        maxDrawdown: Math.min(maxDrawdown * 1.3, 0.5),
-        perTradeExposure: Math.min(perTradeExposure * 2, 0.25),
       }),
     ]);
 

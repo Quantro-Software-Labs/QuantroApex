@@ -1,4 +1,5 @@
 import ccxt, { type Exchange } from 'ccxt';
+import { randomUUID } from 'crypto';
 import {
   IBrokerClient,
   BrokerAccount,
@@ -30,6 +31,12 @@ export class CcxtClient implements IBrokerClient {
     return !!(this.apiKey && this.apiSecret);
   }
 
+  private assertConfiguredOrTest(action: string): void {
+    if (!this.isConfigured() && process.env.NODE_ENV !== 'test') {
+      throw new Error(`CcxtClient.${action} failed: credentials not configured. Real broker required outside test mode.`);
+    }
+  }
+
   private getExchange(): Exchange {
     if (this.exchange) return this.exchange;
 
@@ -50,6 +57,7 @@ export class CcxtClient implements IBrokerClient {
   }
 
   async getAccount(): Promise<BrokerAccount> {
+    this.assertConfiguredOrTest('getAccount');
     if (!this.isConfigured()) {
       let totalPositionValue = 0;
       this.mockPositions.forEach((pos) => {
@@ -79,6 +87,7 @@ export class CcxtClient implements IBrokerClient {
   }
 
   async getPositions(): Promise<BrokerPosition[]> {
+    this.assertConfiguredOrTest('getPositions');
     if (!this.isConfigured()) {
       const positions: BrokerPosition[] = [];
       this.mockPositions.forEach((pos, symbol) => {
@@ -110,6 +119,7 @@ export class CcxtClient implements IBrokerClient {
   }
 
   async createOrder(params: CreateOrderParams): Promise<BrokerOrder> {
+    this.assertConfiguredOrTest('createOrder');
     if (!this.isConfigured()) {
       const fillPrice = params.limitPrice || params.estimatedPrice || 100.0;
       const orderValue = fillPrice * params.qty;
@@ -134,7 +144,7 @@ export class CcxtClient implements IBrokerClient {
       }
 
       return {
-        id: `mock_ccxt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: `mock_ccxt_${Date.now()}_${randomUUID().slice(0, 8)}`,
         clientOrderId: params.idempotencyKey,
         symbol: params.symbol,
         side: params.side,
@@ -189,6 +199,7 @@ export class CcxtClient implements IBrokerClient {
   }
 
   async getOrder(orderId: string): Promise<BrokerOrder> {
+    this.assertConfiguredOrTest('getOrder');
     if (!this.isConfigured()) {
       return {
         id: orderId,
@@ -228,6 +239,7 @@ export class CcxtClient implements IBrokerClient {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    this.assertConfiguredOrTest('cancelOrder');
     if (!this.isConfigured()) {
       return;
     }

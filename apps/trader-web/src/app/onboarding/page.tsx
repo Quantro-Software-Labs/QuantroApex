@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMe, useUpdateProfile } from '@/lib/queries';
+import Image from 'next/image';
+import { useMe, useUpdateProfile, ExperienceLevel, UpdateProfileInput } from '@/lib/queries';
 import {
   ShieldCheck,
-  Zap,
   TrendingUp,
   Brain,
   CheckCircle2,
@@ -15,10 +15,10 @@ import {
   Award,
   Sparkles,
   Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type ExperienceLevel = 'NEWCOMER' | 'INTERMEDIATE' | 'PROFESSIONAL';
 type MarketType = 'STOCKS' | 'CRYPTO' | 'FOREX';
 
 export default function OnboardingPage() {
@@ -31,7 +31,7 @@ export default function OnboardingPage() {
 
   // Form State
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(
-    (profile?.experienceLevel as any) ?? 'INTERMEDIATE'
+    profile?.experienceLevel ?? 'INTERMEDIATE',
   );
   const [path, setPath] = useState<'EXPRESS' | 'GUIDED'>('GUIDED');
   const [preferredMarket, setPreferredMarket] = useState<MarketType>('STOCKS');
@@ -42,26 +42,29 @@ export default function OnboardingPage() {
   const [alpacaKey, setAlpacaKey] = useState('');
   const [alpacaSecret, setAlpacaSecret] = useState('');
 
+  // Mandatory disclaimers & consent checkboxes — MUST DEFAULT TO UNCHECKED (false)
+  const [disclaimerConsent, setDisclaimerConsent] = useState(false);
+  const [globalBrainConsent, setGlobalBrainConsent] = useState(false);
+
   const totalSteps = path === 'EXPRESS' ? 4 : 6;
 
   async function handleComplete() {
     setSaving(true);
     try {
-      await updateProfile.mutateAsync({
+      const payload: UpdateProfileInput = {
         experienceLevel,
         preferredMarket,
         onboardingCompletedAt: new Date().toISOString(),
         profile: {
-          globalBrainConsent: true,
+          globalBrainConsent,
           isBrokerConnected: Boolean(alpacaKey.trim()),
           alpacaApiKey: alpacaKey.trim(),
           alpacaSecretKey: alpacaSecret.trim(),
         },
-      } as any);
-
+      };
+      await updateProfile.mutateAsync(payload);
       router.push('/home');
     } catch {
-      // Navigate to home regardless for smooth UX
       router.push('/home');
     } finally {
       setSaving(false);
@@ -80,16 +83,25 @@ export default function OnboardingPage() {
     if (step > 1) setStep((s) => s - 1);
   }
 
+  // Can the user advance from the current step?
+  // Step 2 in both paths includes the required disclaimers which must be checked
+  const canProceed = step !== 2 || disclaimerConsent;
+
   return (
-    <div className="min-h-screen bg-[#060D1A] text-apex-text flex flex-col justify-between p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-apex-bg text-apex-text flex flex-col justify-between p-6 relative overflow-hidden">
       {/* Background Ambient Glow */}
       <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-apex-accent/10 blur-[150px] pointer-events-none" />
 
       {/* Top Header & Progress */}
       <div className="mx-auto max-w-2xl w-full flex items-center justify-between z-10 py-4">
         <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/quantro_logo.jpeg" alt="Quantro Logo" className="h-6 w-6 rounded-md object-cover" />
+          <Image
+            src="/quantro_logo.jpeg"
+            alt="Quantro Logo"
+            width={24}
+            height={24}
+            className="rounded-md object-cover"
+          />
           <span className="text-sm font-bold tracking-wider uppercase text-apex-text">
             Quantro<span className="text-apex-accent">Apex</span> Setup
           </span>
@@ -98,8 +110,8 @@ export default function OnboardingPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={handleComplete}
-            disabled={saving}
-            className="text-xs font-semibold text-apex-accent hover:underline transition-all"
+            disabled={saving || !disclaimerConsent}
+            className="text-xs font-semibold text-apex-accent hover:underline transition-all disabled:opacity-40"
           >
             Skip to App &rarr;
           </button>
@@ -118,7 +130,7 @@ export default function OnboardingPage() {
       {/* Main Content Card */}
       <div className="mx-auto max-w-2xl w-full my-auto z-10">
         <div className="rounded-3xl border border-apex-border/80 bg-apex-surface/90 p-8 shadow-2xl backdrop-blur-xl transition-all duration-300">
-          
+
           {/* STEP 1: Experience & Track Selection */}
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in duration-200">
@@ -144,7 +156,7 @@ export default function OnboardingPage() {
                     'w-full p-4 rounded-2xl border text-left transition-all flex items-start gap-4',
                     experienceLevel === 'NEWCOMER'
                       ? 'border-apex-accent bg-apex-accent/10 shadow-md shadow-apex-accent/10'
-                      : 'border-apex-border bg-apex-bg/60 hover:border-apex-accent/40'
+                      : 'border-apex-border bg-apex-bg/60 hover:border-apex-accent/40',
                   )}
                 >
                   <div className="p-2 rounded-xl bg-apex-surface text-apex-accent mt-0.5">
@@ -153,7 +165,7 @@ export default function OnboardingPage() {
                   <div>
                     <p className="text-sm font-bold text-apex-text">Newcomer</p>
                     <p className="text-xs text-apex-muted mt-0.5">
-                      New to algorithmic & quantitative trading. Prefers guided setup and plain-language AI insights.
+                      New to algorithmic &amp; quantitative trading. Prefers guided setup and plain-language insights.
                     </p>
                   </div>
                 </button>
@@ -165,7 +177,7 @@ export default function OnboardingPage() {
                     'w-full p-4 rounded-2xl border text-left transition-all flex items-start gap-4',
                     experienceLevel === 'INTERMEDIATE'
                       ? 'border-apex-accent bg-apex-accent/10 shadow-md shadow-apex-accent/10'
-                      : 'border-apex-border bg-apex-bg/60 hover:border-apex-accent/40'
+                      : 'border-apex-border bg-apex-bg/60 hover:border-apex-accent/40',
                   )}
                 >
                   <div className="p-2 rounded-xl bg-apex-surface text-apex-accent mt-0.5">
@@ -186,7 +198,7 @@ export default function OnboardingPage() {
                     'w-full p-4 rounded-2xl border text-left transition-all flex items-start gap-4',
                     experienceLevel === 'PROFESSIONAL'
                       ? 'border-apex-accent bg-apex-accent/10 shadow-md shadow-apex-accent/10'
-                      : 'border-apex-border bg-apex-bg/60 hover:border-apex-accent/40'
+                      : 'border-apex-border bg-apex-bg/60 hover:border-apex-accent/40',
                   )}
                 >
                   <div className="p-2 rounded-xl bg-apex-surface text-apex-accent mt-0.5">
@@ -195,7 +207,7 @@ export default function OnboardingPage() {
                   <div>
                     <p className="text-sm font-bold text-apex-text">Professional</p>
                     <p className="text-xs text-apex-muted mt-0.5">
-                      Experienced quant or institutional trader. Wants deep metrics, walk-forward validation, & full control.
+                      Experienced quant or institutional trader. Deep metrics, walk-forward validation &amp; full control.
                     </p>
                   </div>
                 </button>
@@ -214,7 +226,7 @@ export default function OnboardingPage() {
                       'p-3 rounded-xl border text-center text-xs font-bold transition-all',
                       path === 'GUIDED'
                         ? 'border-apex-accent bg-apex-accent/15 text-apex-accent'
-                        : 'border-apex-border bg-apex-bg/40 text-apex-muted'
+                        : 'border-apex-border bg-apex-bg/40 text-apex-muted',
                     )}
                   >
                     Guided Walkthrough (6 Steps)
@@ -226,7 +238,7 @@ export default function OnboardingPage() {
                       'p-3 rounded-xl border text-center text-xs font-bold transition-all',
                       path === 'EXPRESS'
                         ? 'border-apex-accent bg-apex-accent/15 text-apex-accent'
-                        : 'border-apex-border bg-apex-bg/40 text-apex-muted'
+                        : 'border-apex-border bg-apex-bg/40 text-apex-muted',
                     )}
                   >
                     Express Setup (4 Steps)
@@ -236,52 +248,69 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* STEP 2: How Apex Learns & System Architecture */}
+          {/* STEP 2: Risk Disclaimer & Consent (MANDATORY ONBOARDING STEP) */}
           {step === 2 && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-apex-accent/10 text-apex-accent text-xs font-semibold mb-3">
-                  <Brain size={14} />
-                  <span>Global Brain V2</span>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-semibold mb-3">
+                  <AlertTriangle size={14} />
+                  <span>Important Risk Disclaimer</span>
                 </div>
                 <h1 className="text-2xl font-extrabold text-apex-text tracking-tight">
-                  How QuantroApex Learns & Trade
+                  Simulated Trading &amp; Regulatory Notice
                 </h1>
                 <p className="text-sm text-apex-muted mt-1 leading-relaxed">
-                  Apex is an autonomous continuous market engine. It continuously ingests real-time data, trains reinforcement learning models, and enforces strict decision gates.
+                  Please review the following regulatory disclosures before proceeding into the trading terminal.
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="p-4 rounded-2xl border border-apex-border bg-apex-bg/60 flex items-start gap-4">
-                  <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 font-bold text-sm shrink-0">1</div>
-                  <div>
-                    <p className="text-sm font-bold text-apex-text">Continuous Data Ingestion</p>
-                    <p className="text-xs text-apex-muted mt-0.5">
-                      Streams market candles across Stocks, Crypto, and Forex WebSockets into TimescaleDB 24/7.
-                    </p>
+              <div className="rounded-2xl border border-apex-border bg-apex-bg/60 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-400">
+                    <ShieldCheck size={14} />
                   </div>
+                  <p className="text-xs text-apex-text leading-relaxed">
+                    QuantroApex provides paper trading simulation with virtual capital. Simulated performance results have inherent limitations and do not represent actual trading.
+                  </p>
                 </div>
 
-                <div className="p-4 rounded-2xl border border-apex-border bg-apex-bg/60 flex items-start gap-4">
-                  <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 font-bold text-sm shrink-0">2</div>
-                  <div>
-                    <p className="text-sm font-bold text-apex-text">SCOPED_EDGE Confidence Gating</p>
-                    <p className="text-xs text-apex-muted mt-0.5">
-                      Every signal must pass a strict 0.55 WIN-probability gate before execution to cut losses.
-                    </p>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-400">
+                    <Brain size={14} />
                   </div>
+                  <p className="text-xs text-apex-text leading-relaxed">
+                    Automated signals and AI analyses are for educational and exploratory purposes only. Nothing on this platform constitutes financial or investment advice.
+                  </p>
                 </div>
+              </div>
 
-                <div className="p-4 rounded-2xl border border-apex-border bg-apex-bg/60 flex items-start gap-4">
-                  <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 font-bold text-sm shrink-0">3</div>
-                  <div>
-                    <p className="text-sm font-bold text-apex-text">Server-Side Risk Vault</p>
-                    <p className="text-xs text-apex-muted mt-0.5">
-                      Enforces hard drawdown limits and position caps on every order before it reaches the broker.
-                    </p>
-                  </div>
-                </div>
+              {/* Checkboxes: Must default to unchecked (false) */}
+              <div className="space-y-3 pt-2">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    id="onboarding-disclaimer-checkbox"
+                    type="checkbox"
+                    checked={disclaimerConsent}
+                    onChange={(e) => setDisclaimerConsent(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-apex-border bg-apex-bg text-apex-accent focus:ring-apex-accent cursor-pointer"
+                  />
+                  <span className="text-xs text-apex-text font-medium leading-relaxed">
+                    I acknowledge and agree: <strong className="text-white">Paper trading with simulated money. Not investment advice. Past or simulated results don&apos;t guarantee future returns.</strong>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    id="onboarding-brain-consent-checkbox"
+                    type="checkbox"
+                    checked={globalBrainConsent}
+                    onChange={(e) => setGlobalBrainConsent(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-apex-border bg-apex-bg text-apex-accent focus:ring-apex-accent cursor-pointer"
+                  />
+                  <span className="text-xs text-apex-muted leading-relaxed">
+                    (Optional) Allow anonymized telemetry and strategy learning to improve platform risk models.
+                  </span>
+                </label>
               </div>
             </div>
           )}
@@ -346,7 +375,7 @@ export default function OnboardingPage() {
               <div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold mb-3">
                   <TrendingUp size={14} />
-                  <span>Market & Strategy</span>
+                  <span>Market &amp; Strategy</span>
                 </div>
                 <h1 className="text-2xl font-extrabold text-apex-text tracking-tight">
                   Choose Initial Strategy
@@ -364,7 +393,7 @@ export default function OnboardingPage() {
                     'w-full p-4 rounded-2xl border text-left transition-all flex items-start gap-4',
                     strategy === 'ngx-trend-follower'
                       ? 'border-emerald-500/60 bg-emerald-500/10'
-                      : 'border-apex-border bg-apex-bg/60'
+                      : 'border-apex-border bg-apex-bg/60',
                   )}
                 >
                   <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-sm shrink-0">STOCKS</div>
@@ -374,7 +403,7 @@ export default function OnboardingPage() {
                       <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400">SCOPED_EDGE Active</span>
                     </div>
                     <p className="text-xs text-apex-muted mt-1">
-                      Focuses on momentum & trend breakouts across top NGX equities (DANGCEM, MTNN, GTCO, ZENITHBANK).
+                      Focuses on momentum &amp; trend breakouts across top NGX equities (DANGCEM, MTNN, GTCO, ZENITHBANK).
                     </p>
                   </div>
                 </button>
@@ -386,7 +415,7 @@ export default function OnboardingPage() {
                     'w-full p-4 rounded-2xl border text-left transition-all flex items-start gap-4',
                     strategy === 'strat-breakout-engine'
                       ? 'border-emerald-500/60 bg-emerald-500/10'
-                      : 'border-apex-border bg-apex-bg/60'
+                      : 'border-apex-border bg-apex-bg/60',
                   )}
                 >
                   <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400 font-bold text-sm shrink-0">STOCKS</div>
@@ -396,7 +425,7 @@ export default function OnboardingPage() {
                       <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-400">Secondary Edge</span>
                     </div>
                     <p className="text-xs text-apex-muted mt-1">
-                      Trades daily volatility expansion on top liquid US equities & indices with 0.55 win-probability gate.
+                      Trades daily volatility expansion on top liquid US equities &amp; indices with 0.55 win-probability gate.
                     </p>
                   </div>
                 </button>
@@ -410,10 +439,10 @@ export default function OnboardingPage() {
               <div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-apex-accent/10 text-apex-accent text-xs font-semibold mb-3">
                   <Key size={14} />
-                  <span>Capital & Broker</span>
+                  <span>Capital &amp; Broker</span>
                 </div>
                 <h1 className="text-2xl font-extrabold text-apex-text tracking-tight">
-                  Virtual Capital & Broker Keys
+                  Virtual Capital &amp; Broker Keys
                 </h1>
                 <p className="text-sm text-apex-muted mt-1 leading-relaxed">
                   Start in Simulation Mode with virtual funds, or optional Alpaca API keys for Live trading.
@@ -435,7 +464,7 @@ export default function OnboardingPage() {
                           'p-3 rounded-xl border text-center text-xs font-bold transition-all',
                           virtualCapital === cap
                             ? 'border-apex-accent bg-apex-accent/15 text-apex-accent'
-                            : 'border-apex-border bg-apex-bg/40 text-apex-muted'
+                            : 'border-apex-border bg-apex-bg/40 text-apex-muted',
                         )}
                       >
                         ${cap.toLocaleString()}
@@ -496,7 +525,7 @@ export default function OnboardingPage() {
                 </div>
                 <div className="flex justify-between text-apex-muted">
                   <span>Execution Mode:</span>
-                  <span className="font-bold text-emerald-400">{alpacaKey ? 'LIVE READY' : 'SIMULATION'}</span>
+                  <span className="font-bold text-amber-400">SIMULATED</span>
                 </div>
               </div>
             </div>
@@ -518,9 +547,10 @@ export default function OnboardingPage() {
 
             <button
               type="button"
+              id="onboarding-next-btn"
               onClick={handleNext}
-              disabled={saving}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-apex-accent text-white text-xs font-bold hover:bg-apex-accent/90 transition-all shadow-md shadow-apex-accent/20 disabled:opacity-60"
+              disabled={saving || !canProceed}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-apex-accent text-white text-xs font-bold hover:bg-apex-accent/90 transition-all shadow-md shadow-apex-accent/20 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : null}
               {saving ? 'Launching Engine…' : step === totalSteps ? 'Launch Apex Dashboard' : 'Continue'}
@@ -531,9 +561,9 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* Footer Branding */}
+      {/* Footer Branding & Disclaimer */}
       <div className="mx-auto max-w-2xl w-full text-center text-xs text-apex-muted/60 z-10 py-2">
-        Quantro Software Labs • QuantroApex Autonomous Engine
+        Paper trading with simulated money. Not investment advice. Past or simulated results don&apos;t guarantee future returns.
       </div>
     </div>
   );

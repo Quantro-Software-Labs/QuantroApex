@@ -175,8 +175,8 @@ export default function PerformancePage() {
   const metrics = [
     {
       label: 'Win Rate',
-      value: data ? `${(data.winRate * 100).toFixed(1)}%` : '—',
-      positive: (data?.winRate ?? 0) >= 0.5,
+      value: data?.winRate != null ? `${(data.winRate * 100).toFixed(1)}%` : 'Not enough history yet',
+      positive: data?.winRate != null ? data.winRate >= 0.5 : undefined,
       icon: Target,
     },
     {
@@ -187,19 +187,19 @@ export default function PerformancePage() {
     },
     {
       label: 'Sharpe Ratio',
-      value: data?.sharpeRatio != null ? data.sharpeRatio.toFixed(2) : '—',
-      positive: (data?.sharpeRatio ?? 0) > 1,
+      value: data?.sharpeRatio != null ? data.sharpeRatio.toFixed(2) : 'Not enough history yet',
+      positive: data?.sharpeRatio != null ? data.sharpeRatio > 1 : undefined,
       icon: Activity,
     },
     {
       label: 'Avg Hold Time',
-      value: data?.avgHoldTime != null ? `${Math.round(data.avgHoldTime)}h` : '—',
+      value: data?.avgHoldTime != null && data.avgHoldTime > 0 ? `${Math.round(data.avgHoldTime)}h` : '—',
       positive: undefined,
       icon: Clock,
     },
     {
       label: 'Max Drawdown',
-      value: data?.maxDrawdown != null ? `${data.maxDrawdown.toFixed(1)}%` : '—',
+      value: data?.maxDrawdown != null ? `${data.maxDrawdown.toFixed(1)}%` : 'Not enough history yet',
       positive: false,
       icon: AlertTriangle,
     },

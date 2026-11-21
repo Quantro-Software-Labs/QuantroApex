@@ -257,7 +257,10 @@ async def run_paper(
 
 async def run_all() -> None:
     """Production: streaming + API + scoped paper inference."""
-    await apply_schema()
+    try:
+        await apply_schema()
+    except Exception as exc:
+        logger.warning(f"Database schema setup skipped (Postgres offline): {exc}")
 
     async def _api() -> None:
         import uvicorn

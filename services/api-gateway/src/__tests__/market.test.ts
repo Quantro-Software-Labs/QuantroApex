@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../app.js';
 import { FastifyInstance } from 'fastify';
 import { registerTestUser } from './helpers/firebase_auth.js';
+import { setMockRealQuote, setMockCandles, clearMockRealQuotes } from '../lib/market/quote_engine.js';
 
 describe('Market & Stock Study Hub Endpoints', () => {
   let app: FastifyInstance;
@@ -13,9 +14,18 @@ describe('Market & Stock Study Hub Endpoints', () => {
 
     const session = await registerTestUser(app);
     authToken = session.accessToken;
+
+    setMockRealQuote('AAPL', 150);
+    setMockRealQuote('MSFT', 300);
+    setMockRealQuote('BTC/USD', 65000);
+    setMockCandles('AAPL', [
+      { timestamp: '2026-11-19T00:00:00Z', open: 145, high: 149, low: 144, close: 148, volume: 5000 },
+      { timestamp: '2026-11-20T00:00:00Z', open: 148, high: 152, low: 147, close: 150, volume: 10000 },
+    ]);
   });
 
   afterAll(async () => {
+    clearMockRealQuotes();
     await app.close();
   });
 
@@ -48,6 +58,18 @@ describe('Market & Stock Study Hub Endpoints', () => {
     expect(json.technicals).toHaveProperty('macd');
     expect(Array.isArray(json.candles)).toBe(true);
     expect(json.candles.length).toBeGreaterThan(0);
+  });
+
+  it('should return 503 MARKET_DATA_UNAVAILABLE when candles/history are unavailable', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/market/stocks/MSFT',
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+
+    expect(res.statusCode).toBe(503);
+    const json = res.json();
+    expect(json.error).toBe('MARKET_DATA_UNAVAILABLE');
   });
 
   it('should return 404 for unknown stock symbol', async () => {

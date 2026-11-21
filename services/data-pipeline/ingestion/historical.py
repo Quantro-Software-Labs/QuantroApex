@@ -31,7 +31,19 @@ class HistoricalIngester:
         for name in ("binance", "bybit", "coinbase"):
             try:
                 klass = getattr(ccxt, name)
-                self.exchanges[name] = klass({"enableRateLimit": True})
+                params: dict[str, Any] = {"enableRateLimit": True}
+                if name == "binance":
+                    base_vision = getattr(
+                        self.settings,
+                        "binance_public_url",
+                        "https://data-api.binance.vision",
+                    ).rstrip("/")
+                    params["urls"] = {
+                        "api": {
+                            "public": f"{base_vision}/api/v3",
+                        }
+                    }
+                self.exchanges[name] = klass(params)
             except Exception as exc:
                 logger.warning(f"Could not init exchange {name}: {exc}")
         if "coinbase" in self.exchanges:
@@ -171,8 +183,11 @@ class HistoricalIngester:
                     candles = await self.fetch_oanda(
                         asset.symbol, timeframe, current_since
                     )
+                elif asset.exchange == "binance":
+                    candles = await self.fetch_binance_vision(
+                        asset.symbol, timeframe, current_since
+                    )
                 elif asset.exchange in (
-                    "binance",
                     "coinbase",
                     "coinbasepro",
                     "bybit",
@@ -305,6 +320,52 @@ class HistoricalIngester:
             }
             for c in raw
         ]
+
+    async def fetch_binance_vision(
+        self, symbol: str, timeframe: str, since: datetime
+    ) -> list[dict[str, Any]]:
+        """Fetch real public Binance history from data-api.binance.vision."""
+        base_vision = getattr(
+            self.settings,
+            "binance_public_url",
+            "https://data-api.binance.vision",
+        ).rstrip("/")
+        clean_sym = symbol.replace("/", "").replace("-", "")
+        tf = timeframe.lower()
+        if tf == "1h":
+            tf = "1h"
+        elif tf == "1d":
+            tf = "1d"
+        start_ms = int(since.timestamp() * 1000)
+        url = f"{base_vision}/api/v3/klines"
+        params = {
+            "symbol": clean_sym,
+            "interval": tf,
+            "startTime": start_ms,
+            "limit": 1000,
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+        out = []
+        for row in data:
+            out.append(
+                {
+                    "time": datetime.fromtimestamp(row[0] / 1000, tz=timezone.utc),
+                    "symbol": symbol,
+                    "exchange": "binance",
+                    "asset_class": "CRYPTO",
+                    "timeframe": timeframe,
+                    "open": float(row[1]),
+                    "high": float(row[2]),
+                    "low": float(row[3]),
+                    "close": float(row[4]),
+                    "volume": float(row[5]),
+                }
+            )
+        return out
 
     async def fetch_yfinance(
         self, symbol: str, timeframe: str, since: datetime

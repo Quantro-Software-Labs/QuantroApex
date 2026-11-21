@@ -74,7 +74,7 @@ describe('Notifications & Advisory Mode Endpoints', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.payload);
-    expect(body.signals.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.signals)).toBe(true);
   });
 
   it('should respond to an advisory signal (APPROVE)', async () => {

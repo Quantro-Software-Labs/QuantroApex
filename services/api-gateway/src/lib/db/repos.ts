@@ -1131,14 +1131,31 @@ export async function updateOrder(
     status: OrderStatus;
     brokerOrderId: string | null;
     limitPrice: number | null;
+    reservedCash: number | Prisma.Decimal;
+    reservedQuantity: number | Prisma.Decimal;
   }>,
 ): Promise<Order> {
+  const isTerminal =
+    data.status === 'CANCELLED' ||
+    data.status === 'REJECTED' ||
+    data.status === 'EXPIRED';
+
   const row = await prisma.order.update({
     where: { id: orderId },
     data: {
       ...(data.status !== undefined ? { status: data.status } : {}),
       ...(data.brokerOrderId !== undefined ? { brokerOrderId: data.brokerOrderId } : {}),
       ...(data.limitPrice !== undefined ? { limitPrice: data.limitPrice } : {}),
+      ...(data.reservedCash !== undefined
+        ? { reservedCash: data.reservedCash }
+        : isTerminal
+        ? { reservedCash: 0 }
+        : {}),
+      ...(data.reservedQuantity !== undefined
+        ? { reservedQuantity: data.reservedQuantity }
+        : isTerminal
+        ? { reservedQuantity: 0 }
+        : {}),
     },
   });
   return mapOrder(row);

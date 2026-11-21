@@ -279,10 +279,8 @@ async def load_ohlcv(
     bars: int = 200,
 ) -> tuple[list[dict[str, Any]], str]:
     """
-    Load OHLCV candles.
-
-    Priority: Alpaca (if keys) → gateway → synthetic.
-    Returns (candles, source).
+    Load OHLCV candles from live provider or gateway.
+    Returns (candles, source). Raises RuntimeError if unavailable (no synthetic candles).
     """
     live = await fetch_from_alpaca(asset_class, symbol, timeframe, bars)
     if live:
@@ -292,7 +290,9 @@ async def load_ohlcv(
     if gateway:
         return gateway, "gateway"
 
-    return synthesize_ohlcv(asset_class, symbol, timeframe, bars), "synthetic"
+    raise RuntimeError(
+        f"No real market data available for {asset_class}:{symbol}. Synthetic candle fallback is disabled."
+    )
 
 
 def candles_to_dataframe(candles: list[dict[str, Any]]) -> pd.DataFrame:

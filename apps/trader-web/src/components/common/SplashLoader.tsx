@@ -63,7 +63,7 @@ export function SplashLoader({
     <div
       aria-hidden="true"
       className={cn(
-        'fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#060D1A]/95 backdrop-blur-xl transition-opacity duration-500 ease-in-out',
+        'fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-apex-bg/95 backdrop-blur-xl transition-opacity duration-500 ease-in-out',
         isCurrentlyActive ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       )}
     >

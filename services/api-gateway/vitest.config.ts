@@ -7,6 +7,10 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 30000,
+    env: {
+      NODE_ENV: 'test',
+      ALLOW_DEV_AUTH: 'true',
+    },
   },
 });
 

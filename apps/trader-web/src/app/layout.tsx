@@ -1,13 +1,7 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-
-const inter = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-inter',
-});
+import { SplashLoader } from '@/components/common/SplashLoader';
 
 export const metadata: Metadata = {
   title: 'QuantroApex — Autonomous AI Trading',
@@ -31,11 +25,9 @@ export const metadata: Metadata = {
   },
 };
 
-import { SplashLoader } from '@/components/common/SplashLoader';
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`} suppressHydrationWarning>
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <body className="h-full antialiased" suppressHydrationWarning>
         <Providers>
           <SplashLoader />

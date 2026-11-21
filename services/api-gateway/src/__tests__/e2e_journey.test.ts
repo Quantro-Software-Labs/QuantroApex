@@ -56,8 +56,8 @@ describe('QuantroApex V1 — End-to-End User Journey Test', () => {
         globalBrainConsent: true,
         riskVault: {
           dailyLossLimit: 1000,
-          maxDrawdown: 0.20,
-          perTradeExposure: 0.10, // 10% max exposure per trade
+          maxDrawdown: 20,
+          perTradeExposure: 10, // 10% max exposure per trade
           stocksEnabled: true,
           cryptoEnabled: true,
           forexEnabled: false,

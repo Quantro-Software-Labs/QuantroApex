@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from sklearn.preprocessing import StandardScaler
+
 from processing.features import FEATURE_KEYS, features_to_vector
 
 # Two-class outcomes only — BREAKEVEN is collapsed to LOSS at labelling time
@@ -35,13 +37,15 @@ class MarketDataset(Dataset):
         self,
         samples: list[dict[str, Any]],
         seq_len: int = 60,
-        input_dim: int = 14,
+        input_dim: int = len(FEATURE_KEYS),
         add_noise: bool = True,
+        scaler: Any | None = None,
     ) -> None:
         self.seq_len = seq_len
         self.input_dim = input_dim
         self.samples = samples
         self.add_noise = add_noise
+        self.scaler = scaler
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -78,10 +82,14 @@ class MarketDataset(Dataset):
 
         seq = np.nan_to_num(seq, nan=0.0, posinf=0.0, neginf=0.0)
         seq = np.clip(seq, -50.0, 50.0).astype(np.float32)
-        # Per-sequence standardize — keeps transformer inputs ~O(1) across assets
-        std = float(seq.std())
-        if std > 1e-6:
-            seq = (seq - float(seq.mean())) / std
+
+        if self.scaler is not None:
+            seq = self.scaler.transform(seq).astype(np.float32)
+        else:
+            # Per-sequence standardize fallback
+            std = float(seq.std())
+            if std > 1e-6:
+                seq = (seq - float(seq.mean())) / std
 
         if self.add_noise:
             noise = np.random.normal(0, 0.01, size=seq.shape).astype(np.float32)
@@ -89,6 +97,38 @@ class MarketDataset(Dataset):
 
         label = sample_label(sample)
         return torch.from_numpy(seq), torch.tensor(label, dtype=torch.long)
+
+
+def fit_dataset_scaler(
+    samples: list[dict[str, Any]],
+    input_dim: int = len(FEATURE_KEYS),
+    seq_len: int = 60,
+) -> StandardScaler:
+    """Fit a StandardScaler strictly on the provided training samples' feature vectors."""
+    scaler = StandardScaler()
+    all_rows = []
+    for s in samples:
+        seq = s.get("feature_seq")
+        if isinstance(seq, np.ndarray) and seq.ndim == 2:
+            if seq.shape[1] == input_dim:
+                all_rows.append(seq)
+            else:
+                fixed = np.zeros((seq.shape[0], input_dim), dtype=np.float32)
+                c = min(input_dim, seq.shape[1])
+                fixed[:, :c] = seq[:, :c]
+                all_rows.append(fixed)
+        else:
+            features = s.get("features") or {}
+            vec = features_to_vector(features)
+            all_rows.append(np.tile(vec, (seq_len, 1)))
+
+    if all_rows:
+        stacked = np.vstack(all_rows)
+        scaler.fit(stacked)
+    else:
+        # Default fallback
+        scaler.fit(np.zeros((1, input_dim), dtype=np.float32))
+    return scaler
 
 
 def feature_keys() -> list[str]:

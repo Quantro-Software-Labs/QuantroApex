@@ -7,6 +7,8 @@ import { api } from '@/lib/api-client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type ExperienceLevel = 'NEWCOMER' | 'INTERMEDIATE' | 'PROFESSIONAL';
+
 export interface User {
   id: string;
   email: string | null;
@@ -14,7 +16,7 @@ export interface User {
   name: string;
   firstName: string | null;
   lastName: string | null;
-  experienceLevel: 'NEWCOMER' | 'INTERMEDIATE' | 'PROFESSIONAL';
+  experienceLevel: ExperienceLevel;
   preferredMarket: string;
   onboardingCompletedAt: string | null;
   profile: {
@@ -109,7 +111,7 @@ export interface Strategy {
 
 export interface AnalyticsData {
   equityCurve: { date: string; value: number }[];
-  winRate: number;
+  winRate: number | null;
   totalTrades: number;
   avgHoldTime: number;
   sharpeRatio: number | null;
@@ -131,10 +133,103 @@ export interface Trade {
   closedAt: string | null;
 }
 
+export interface GatewayConfig {
+  liveTradingEnabled: boolean;
+  environment: string;
+}
+
+export interface RiskVaultData {
+  id: string;
+  userId: string;
+  assetClass: string;
+  dailyLossLimit: number;
+  dailyLossLimitUnit: 'PERCENT' | 'USD';
+  maxDrawdown: number;
+  maxDrawdownUnit: 'PERCENT' | 'USD';
+  perTradeExposure: number;
+  perTradeExposureUnit: 'PERCENT' | 'USD';
+  emergencyStop: boolean;
+  emergencyStoppedAt: string | null;
+  stocksEnabled: boolean;
+  cryptoEnabled: boolean;
+  forexEnabled: boolean;
+  dailyLossBasis?: string;
+  dailyLossBasisExplanation?: string;
+  queuedClosesCount?: number;
+}
+
+export interface UpdateRiskVaultInput {
+  dailyLossLimit?: number;
+  dailyLossLimitUnit?: 'PERCENT' | 'USD';
+  maxDrawdown?: number;
+  maxDrawdownUnit?: 'PERCENT' | 'USD';
+  perTradeExposure?: number;
+  perTradeExposureUnit?: 'PERCENT' | 'USD';
+  stocksEnabled?: boolean;
+  cryptoEnabled?: boolean;
+  forexEnabled?: boolean;
+}
+
+export interface EmergencyStopResult {
+  success: boolean;
+  partial: boolean;
+  isEmergencyStopped: boolean;
+  emergencyStoppedAt: string;
+  dailyLossBasis: string;
+  cancelledOrders: Array<{ id: string; symbol: string; side: string; quantity: number }>;
+  failedCancels: Array<{ id: string; symbol: string; reason: string }>;
+  closedPositions: Array<{ symbol: string; quantity: number; mode: string; status?: string }>;
+  failedCloses: Array<{ symbol: string; quantity: number; mode: string; reason: string }>;
+  summary: {
+    cancelledOrdersCount: number;
+    failedCancelsCount: number;
+    closedPositionsCount: number;
+    failedClosesCount: number;
+  };
+}
+
+export interface UpdateProfileInput {
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string;
+  experienceLevel?: ExperienceLevel;
+  preferredMarket?: string;
+  onboardingCompletedAt?: string | null;
+  profile?: {
+    globalBrainConsent?: boolean;
+    isBrokerConnected?: boolean;
+    alpacaApiKey?: string | null;
+    alpacaSecretKey?: string | null;
+  };
+}
+
+interface RawPortfolioResponse {
+  portfolio?: {
+    equity?: number;
+    totalValue?: number;
+    cashBalance?: number;
+    totalPnl?: number;
+    totalPnlPercent?: number;
+    dayPnl?: number;
+    dayPnlPercent?: number;
+    positions?: Position[];
+  };
+  equity?: number;
+  totalValue?: number;
+  cashBalance?: number;
+  totalPnl?: number;
+  totalPnlPercent?: number;
+  dayPnl?: number;
+  dayPnlPercent?: number;
+  positions?: Position[];
+}
+
 // ─── Query Keys ───────────────────────────────────────────────────────────────
 
 export const queryKeys = {
   me: ['me'] as const,
+  config: ['config'] as const,
+  riskVault: (assetClass = 'STOCKS') => ['risk-vault', assetClass] as const,
   activityFeed: (page: number) => ['activity-feed', page] as const,
   portfolio: ['portfolio'] as const,
   strategies: (assetClass?: string) => ['strategies', assetClass] as const,
@@ -181,6 +276,88 @@ export function useMe() {
   });
 }
 
+export function useConfig() {
+  return useQuery({
+    queryKey: queryKeys.config,
+    queryFn: async () => {
+      try {
+        return await api.get<GatewayConfig>('/config');
+      } catch {
+        return { liveTradingEnabled: false, environment: 'development' } as GatewayConfig;
+      }
+    },
+    staleTime: 60_000,
+  });
+}
+
+export function useRiskVault(assetClass = 'STOCKS') {
+  return useQuery({
+    queryKey: queryKeys.riskVault(assetClass),
+    queryFn: async () => {
+      const res = await api.get<{
+        riskVault?: RiskVaultData;
+        isEmergencyStopped?: boolean;
+        queuedClosesCount?: number;
+        dailyLossBasis?: string;
+        dailyLossBasisExplanation?: string;
+      }>(`/risk-vault?assetClass=${assetClass}`);
+
+      const v = res.riskVault ?? (res as unknown as RiskVaultData);
+      return {
+        ...v,
+        emergencyStop: Boolean(res.isEmergencyStopped ?? v.emergencyStop),
+        queuedClosesCount: res.queuedClosesCount ?? v.queuedClosesCount ?? 0,
+        dailyLossBasis: res.dailyLossBasis ?? v.dailyLossBasis,
+        dailyLossBasisExplanation:
+          res.dailyLossBasisExplanation ??
+          "Losses today count in full. Gains earlier in the day don't widen your limit.",
+      };
+    },
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useUpdateRiskVault(assetClass = 'STOCKS') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateRiskVaultInput) =>
+      api.put<RiskVaultData>(`/risk-vault?assetClass=${assetClass}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.riskVault(assetClass) });
+    },
+  });
+}
+
+export function useEmergencyStop() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<EmergencyStopResult>('/risk-vault/emergency-stop', {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['risk-vault'] });
+      qc.setQueriesData<RiskVaultData>({ queryKey: ['risk-vault'] }, (old) =>
+        old ? { ...old, emergencyStop: true } : old,
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.portfolio });
+      qc.invalidateQueries({ queryKey: queryKeys.activityFeed(1) });
+    },
+  });
+}
+
+export function useResumeTrading(assetClass = 'STOCKS') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ success: boolean; isEmergencyStopped: boolean; dailyLossBasis: string }>(
+        `/risk-vault/resume?assetClass=${assetClass}`,
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['risk-vault'] });
+    },
+  });
+}
+
 export function useActivityFeed(page = 1) {
   return useQuery({
     queryKey: queryKeys.activityFeed(page),
@@ -202,7 +379,7 @@ export function usePortfolio() {
     queryKey: queryKeys.portfolio,
     queryFn: async () => {
       try {
-        const raw = await api.get<any>('/execution/positions');
+        const raw = await api.get<RawPortfolioResponse>('/execution/positions');
         const p = raw?.portfolio ?? raw ?? {};
         const totalValue = p?.equity ?? p?.totalValue ?? p?.cashBalance ?? 100000;
         const totalPnl = p?.totalPnl ?? 0;
@@ -220,17 +397,17 @@ export function usePortfolio() {
         } as PortfolioSummary;
       } catch {
         return {
-          totalValue: 100000.00,
-          totalPnl: 0.00,
-          totalPnlPercent: 0.00,
-          dayPnl: 0.00,
-          dayPnlPercent: 0.00,
+          totalValue: 100000.0,
+          totalPnl: 0.0,
+          totalPnlPercent: 0.0,
+          dayPnl: 0.0,
+          dayPnlPercent: 0.0,
           positions: [],
         } as PortfolioSummary;
       }
     },
     staleTime: 30_000,
-    refetchInterval: 60_000, // refresh every minute
+    refetchInterval: 60_000,
   });
 }
 
@@ -254,7 +431,7 @@ export function useAnalytics(assetClass: string) {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<User>) => api.patch<User>('/auth/profile', data),
+    mutationFn: (data: UpdateProfileInput) => api.patch<User>('/auth/profile', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.me }),
   });
 }
@@ -298,6 +475,30 @@ export function usePlaceOrder() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.portfolio });
       qc.invalidateQueries({ queryKey: queryKeys.activityFeed(1) });
+    },
+  });
+}
+
+export function useInitialiseSubscription() {
+  return useMutation({
+    mutationFn: (data: { plan: string }) =>
+      api.post<{ authorizationUrl?: string; reference: string; accessCode?: string }>(
+        '/subscriptions/initialise',
+        data,
+      ),
+  });
+}
+
+export function useVerifySubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { reference: string }) =>
+      api.post<{ success: boolean; plan: string; status: string }>(
+        '/subscriptions/verify',
+        data,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.me });
     },
   });
 }

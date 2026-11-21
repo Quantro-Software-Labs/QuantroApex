@@ -10,6 +10,7 @@ from loguru import logger
 
 from processing.features import annotate_smc, extract_indicator_features
 from storage.timescale import TimescaleReader, TimescaleWriter
+from config import settings
 
 VBT_AVAILABLE = False
 try:
@@ -212,6 +213,40 @@ STRATEGIES: dict[str, dict[str, Any]] = {
 }
 
 
+def check_rule_signal(
+    df: pd.DataFrame,
+    asset_class: str | None = None,
+    strategy_id: str | None = None,
+    idx: int = -1,
+) -> bool:
+    """
+    Check if any active strategy rule fires an entry signal at bar `idx` of `df`.
+    Used identically in labeller (training) and engine (inference) to ensure train/inference match.
+    """
+    candidates = STRATEGIES.items()
+    if strategy_id:
+        candidates = [(k, v) for k, v in candidates if k == strategy_id]
+    elif asset_class:
+        ac = asset_class.upper()
+        candidates = [
+            (k, v) for k, v in candidates if str(v.get("asset_class", "")).upper() == ac
+        ]
+
+    actual_idx = idx if idx >= 0 else len(df) + idx
+    if actual_idx < 0 or actual_idx >= len(df):
+        return False
+
+    sub_df = df.iloc[: actual_idx + 1]
+    for _, strat in candidates:
+        try:
+            entry_mask = np.asarray(strat["entry"](sub_df)).astype(bool)
+            if len(entry_mask) > 0 and bool(entry_mask[-1]):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 # How many candles to load per symbol when labelling.
 # Must be high enough that deep forex 1H history (30k+) is actually used.
 _LABEL_OHLCV_LIMITS: dict[str, int] = {
@@ -298,12 +333,14 @@ class StrategyLabeller:
                     exits,
                     sl=strategy.get("stop_loss"),
                     tp=strategy.get("take_profit"),
+                    asset_class=asset_class,
                 )
-                smc = annotate_smc(df)
 
                 for trade in trades:
                     entry_idx = trade["entry_idx"]
                     features = extract_indicator_features(df, entry_idx)
+                    # Causal SMC annotation evaluated strictly at entry_idx to prevent look-ahead
+                    smc = annotate_smc(df, current_idx=entry_idx)
                     features["smc_structure"] = smc.get("structure")
                     features["smc_fvg_count"] = len(smc.get("fvgs", []))
                     features["smc_ob_count"] = len(smc.get("order_blocks", []))
@@ -343,55 +380,9 @@ class StrategyLabeller:
         exits: pd.Series,
         sl: float | None,
         tp: float | None,
+        asset_class: str = "CRYPTO",
     ) -> list[dict[str, Any]]:
-        if VBT_AVAILABLE:
-            try:
-                portfolio = vbt.Portfolio.from_signals(
-                    df["close"],
-                    entries=entries,
-                    exits=exits,
-                    init_cash=10_000,
-                    fees=0.001,
-                    sl_stop=sl,
-                    tp_stop=tp,
-                    freq="1D",
-                )
-                if len(portfolio.trades.records) == 0:
-                    return []
-                trades_df = portfolio.trades.records_readable
-                out = []
-                for _, trade in trades_df.iterrows():
-                    entry_index = trade["Entry Index"]
-                    exit_index = trade["Exit Index"]
-                    try:
-                        entry_idx = int(df.index.get_loc(entry_index))
-                    except (KeyError, TypeError):
-                        continue
-                    pnl = float(trade["Return"])
-                    duration = trade.get("Duration")
-                    hold = int(getattr(duration, "days", 0) or 0)
-                    out.append(
-                        {
-                            "entry_idx": entry_idx,
-                            "entry_time": entry_index
-                            if hasattr(entry_index, "isoformat")
-                            else df.index[entry_idx],
-                            "exit_time": exit_index
-                            if hasattr(exit_index, "isoformat")
-                            else None,
-                            "entry_price": float(trade["Entry Price"]),
-                            "exit_price": float(trade["Exit Price"]),
-                            "pnl_pct": pnl,
-                            # BREAKEVEN collapsed into LOSS; >0.1% after fees = WIN
-                            "outcome": "WIN" if pnl > 0.001 else "LOSS",
-                            "hold_duration": hold,
-                        }
-                    )
-                return out
-            except Exception as exc:
-                logger.debug(f"vectorbt path failed, using fallback: {exc}")
-
-        return self._pandas_trades(df, entries, exits, sl, tp)
+        return self._pandas_trades(df, entries, exits, sl, tp, asset_class=asset_class)
 
     def _pandas_trades(
         self,
@@ -400,42 +391,90 @@ class StrategyLabeller:
         exits: pd.Series,
         sl: float | None,
         tp: float | None,
+        asset_class: str = "CRYPTO",
     ) -> list[dict[str, Any]]:
-        closes = df["close"].to_numpy()
-        times = df.index
-        in_pos = False
-        entry_idx = 0
-        entry_price = 0.0
-        trades: list[dict[str, Any]] = []
+        # Fills: enter at NEXT bar's open.
+        # Check SL and TP against bar high/low (if both hit in one bar, stop hits first).
+        # Fees + slippage: crypto default 10 bps fee + 10 bps slippage; stocks default 5 bps fee + 5 bps slippage.
+        # Trades still open at end of data are dropped, never force-closed.
+        is_crypto = str(asset_class).upper() == "CRYPTO"
+        fee_rate = (settings.fee_bps_crypto if is_crypto else settings.fee_bps_stocks) / 10_000.0
+        slip_rate = (settings.slippage_bps_crypto if is_crypto else settings.slippage_bps_stocks) / 10_000.0
 
-        for i in range(len(df)):
-            price = float(closes[i])
-            if not in_pos and bool(entries.iloc[i]):
-                in_pos = True
-                entry_idx = i
-                entry_price = price
-                continue
-            if in_pos:
-                ret = (price - entry_price) / entry_price
-                hit_sl = sl is not None and ret <= -sl
-                hit_tp = tp is not None and ret >= tp
-                hit_exit = bool(exits.iloc[i])
-                if hit_sl or hit_tp or hit_exit or i == len(df) - 1:
-                    # BREAKEVEN collapsed into LOSS; >0.1% covers fees/slippage
-                    outcome = "WIN" if ret > 0.001 else "LOSS"
+        opens = df["open"].to_numpy(dtype=np.float64)
+        highs = df["high"].to_numpy(dtype=np.float64)
+        lows = df["low"].to_numpy(dtype=np.float64)
+        closes = df["close"].to_numpy(dtype=np.float64)
+        times = df.index
+        n = len(df)
+
+        trades: list[dict[str, Any]] = []
+        in_pos = False
+        signal_idx = -1
+        entry_fill_price = 0.0
+        entry_time = None
+
+        for i in range(n):
+            if not in_pos:
+                if bool(entries.iloc[i]):
+                    entry_bar = i + 1
+                    if entry_bar >= n:
+                        # Next bar does not exist in dataset; cannot enter
+                        break
+                    signal_idx = i
+                    raw_entry_price = float(opens[entry_bar])
+                    entry_fill_price = raw_entry_price * (1.0 + slip_rate)
+                    entry_time = times[entry_bar]
+                    in_pos = True
+                    continue
+            else:
+                # In position during bar i
+                sl_price = entry_fill_price * (1.0 - sl) if sl is not None else None
+                tp_price = entry_fill_price * (1.0 + tp) if tp is not None else None
+
+                hit_sl = sl_price is not None and lows[i] <= sl_price
+                hit_tp = tp_price is not None and highs[i] >= tp_price
+
+                exit_price = None
+                exit_reason = None
+
+                # If both hit in one bar, assume the stop hit first
+                if hit_sl and hit_tp:
+                    exit_price = sl_price * (1.0 - slip_rate)
+                    exit_reason = "SL"
+                elif hit_sl:
+                    exit_price = sl_price * (1.0 - slip_rate)
+                    exit_reason = "SL"
+                elif hit_tp:
+                    exit_price = tp_price * (1.0 - slip_rate)
+                    exit_reason = "TP"
+                elif bool(exits.iloc[i]):
+                    exit_price = float(closes[i]) * (1.0 - slip_rate)
+                    exit_reason = "RULE_EXIT"
+
+                if exit_price is not None:
+                    buy_cost = entry_fill_price * (1.0 + fee_rate)
+                    sell_proceeds = exit_price * (1.0 - fee_rate)
+                    ret = (sell_proceeds - buy_cost) / buy_cost
+                    outcome = "WIN" if ret > 0.0 else "LOSS"
+
                     trades.append(
                         {
-                            "entry_idx": entry_idx,
-                            "entry_time": times[entry_idx],
+                            "entry_idx": signal_idx,  # Feature extraction index at signal bar
+                            "entry_time": entry_time,
                             "exit_time": times[i],
-                            "entry_price": entry_price,
-                            "exit_price": price,
+                            "entry_price": entry_fill_price,
+                            "exit_price": exit_price,
                             "pnl_pct": float(ret),
                             "outcome": outcome,
-                            "hold_duration": i - entry_idx,
+                            "hold_duration": i - signal_idx,
+                            "exit_reason": exit_reason,
                         }
                     )
                     in_pos = False
+                    signal_idx = -1
+
+        # Trades still open at end of data are intentionally DROPPED (never force-closed)
         return trades
 
     def classify_regime(self, df: pd.DataFrame, idx: int) -> str:

@@ -3,12 +3,15 @@ export type QuoteSource = 'alpaca' | 'polygon' | 'ccxt' | 'oanda' | 'simulated';
 export interface MarketAssetQuote {
   symbol: string;
   name: string;
-  price: number;
-  change24h: number;
-  changePct24h: number;
-  high24h: number;
-  low24h: number;
-  volume: number;
+  /** Populated ONLY when a real live quote is retrieved from a connected provider. Never fake. */
+  price?: number | null;
+  /** Static directory reference price — NEVER returned to clients as the price. */
+  referenceOnly: number;
+  change24h?: number;
+  changePct24h?: number;
+  high24h?: number;
+  low24h?: number;
+  volume?: number;
   marketCap: string;
   peRatio?: number;
   sector: string;
@@ -21,7 +24,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'AAPL',
     name: 'Apple Inc.',
-    price: 228.45,
+    referenceOnly: 228.45,
     change24h: 3.25,
     changePct24h: 1.44,
     high24h: 229.8,
@@ -35,7 +38,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'NVDA',
     name: 'NVIDIA Corporation',
-    price: 128.9,
+    referenceOnly: 128.9,
     change24h: 5.8,
     changePct24h: 4.71,
     high24h: 130.5,
@@ -49,7 +52,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'TSLA',
     name: 'Tesla, Inc.',
-    price: 215.3,
+    referenceOnly: 215.3,
     change24h: -4.1,
     changePct24h: -1.87,
     high24h: 221.0,
@@ -63,7 +66,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'MSFT',
     name: 'Microsoft Corporation',
-    price: 448.2,
+    referenceOnly: 448.2,
     change24h: 2.1,
     changePct24h: 0.47,
     high24h: 451.0,
@@ -77,7 +80,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'SPY',
     name: 'SPDR S&P 500 ETF Trust',
-    price: 554.8,
+    referenceOnly: 554.8,
     change24h: 3.1,
     changePct24h: 0.56,
     high24h: 556.2,
@@ -90,7 +93,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'EUR/USD',
     name: 'Euro / US Dollar',
-    price: 1.0854,
+    referenceOnly: 1.0854,
     change24h: 0.0032,
     changePct24h: 0.3,
     high24h: 1.088,
@@ -103,7 +106,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'GBP/USD',
     name: 'British Pound / US Dollar',
-    price: 1.284,
+    referenceOnly: 1.284,
     change24h: 0.0055,
     changePct24h: 0.43,
     high24h: 1.2875,
@@ -116,7 +119,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'USD/JPY',
     name: 'US Dollar / Japanese Yen',
-    price: 154.2,
+    referenceOnly: 154.2,
     change24h: -0.85,
     changePct24h: -0.55,
     high24h: 155.4,
@@ -129,7 +132,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'AUD/USD',
     name: 'Australian Dollar / US Dollar',
-    price: 0.658,
+    referenceOnly: 0.658,
     change24h: 0.0022,
     changePct24h: 0.34,
     high24h: 0.661,
@@ -142,7 +145,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'EUR/GBP',
     name: 'Euro / British Pound',
-    price: 0.845,
+    referenceOnly: 0.845,
     change24h: -0.0012,
     changePct24h: -0.14,
     high24h: 0.8475,
@@ -155,7 +158,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'BTC/USDT',
     name: 'Bitcoin / Tether',
-    price: 64250.0,
+    referenceOnly: 64250.0,
     change24h: 1850.0,
     changePct24h: 2.96,
     high24h: 65100.0,
@@ -168,7 +171,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'ETH/USDT',
     name: 'Ethereum / Tether',
-    price: 3480.5,
+    referenceOnly: 3480.5,
     change24h: 112.3,
     changePct24h: 3.33,
     high24h: 3520.0,
@@ -181,7 +184,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'SOL/USDT',
     name: 'Solana / Tether',
-    price: 158.2,
+    referenceOnly: 158.2,
     change24h: 8.4,
     changePct24h: 5.61,
     high24h: 162.0,
@@ -194,7 +197,7 @@ export const MARKET_DIRECTORY: MarketAssetQuote[] = [
   {
     symbol: 'XRP/USDT',
     name: 'XRP / Tether',
-    price: 0.584,
+    referenceOnly: 0.584,
     change24h: 0.024,
     changePct24h: 4.29,
     high24h: 0.602,

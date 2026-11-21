@@ -60,7 +60,7 @@ export function getFirebaseUid(request: FastifyRequest): string {
   return request.user.firebaseUid;
 }
 
-async function upsertLocalUser(decoded: DecodedIdToken) {
+export async function upsertLocalUser(decoded: DecodedIdToken) {
   const email = decoded.email ?? null;
   const phone = decoded.phone_number ?? null;
   const name =
@@ -145,67 +145,90 @@ async function authenticate(
   }
 
   try {
-    // Dev/test bypass: firebase_dev:<uid>:<email_or_phone>
-    if (
-      (config.isDev || process.env.NODE_ENV === 'test') &&
-      idToken.startsWith('firebase_dev:')
-    ) {
+    // Dev/test bypass: allowed ONLY when NODE_ENV === 'test' AND ALLOW_DEV_AUTH === 'true'
+    const allowDevAuth =
+      process.env.NODE_ENV === 'test' && process.env.ALLOW_DEV_AUTH === 'true';
+    if (idToken.startsWith('firebase_dev:')) {
+      if (!allowDevAuth) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Dev authentication bypass is disabled outside test environment',
+        });
+      }
+
       const parts = idToken.split(':');
       const firebaseUid = parts[1] || `dev_${Date.now()}`;
       const contact = parts[2] || 'dev@quantroapex.local';
       const isPhone = contact.startsWith('+');
 
-      const user = await prisma.user.upsert({
-        where: { firebaseUid },
-        update: { lastSeenAt: new Date() },
-        create: {
-          firebaseUid,
-          email: isPhone ? null : contact.toLowerCase(),
-          phone: isPhone ? contact : null,
-          name: 'QuantroApex User',
-          profile: { create: {} },
-          onboardingProgress: { create: { path: 'NEWCOMER', currentStep: 1 } },
-          agentState: { create: {} },
-          notificationPrefs: { create: {} },
-          subscription: { create: { plan: 'FREE' } },
-          portfolios: {
-            create: [
-              { mode: 'LIVE', cashBalance: 0, equity: 0 },
-              { mode: 'SIM', cashBalance: 100000, equity: 100000 },
-            ],
+      const normalizedEmail = isPhone ? null : contact.toLowerCase();
+      let user = await prisma.user.findUnique({ where: { firebaseUid } });
+      if (!user && normalizedEmail) {
+        user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (user) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { firebaseUid, lastSeenAt: new Date() },
+          });
+        }
+      }
+
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            firebaseUid,
+            email: normalizedEmail,
+            phone: isPhone ? contact : null,
+            name: 'QuantroApex User',
+            profile: { create: {} },
+            onboardingProgress: { create: { path: 'NEWCOMER', currentStep: 1 } },
+            agentState: { create: {} },
+            notificationPrefs: { create: {} },
+            subscription: { create: { plan: 'FREE' } },
+            portfolios: {
+              create: [
+                { mode: 'LIVE', cashBalance: 0, equity: 0 },
+                { mode: 'SIM', cashBalance: 100000, equity: 100000 },
+              ],
+            },
+            riskVaults: {
+              create: [
+                {
+                  assetClass: 'STOCKS',
+                  dailyLossLimit: 500,
+                  maxDrawdown: 0.15,
+                  perTradeExposure: 0.05,
+                },
+                {
+                  assetClass: 'CRYPTO',
+                  dailyLossLimit: 500,
+                  maxDrawdown: 0.2,
+                  perTradeExposure: 0.05,
+                  assetsEnabled: false,
+                },
+                {
+                  assetClass: 'FOREX',
+                  dailyLossLimit: 500,
+                  maxDrawdown: 0.15,
+                  perTradeExposure: 0.05,
+                  assetsEnabled: false,
+                },
+                {
+                  assetClass: 'GLOBAL',
+                  dailyLossLimit: 1000,
+                  maxDrawdown: 0.2,
+                  perTradeExposure: 0.1,
+                },
+              ],
+            },
           },
-          riskVaults: {
-            create: [
-              {
-                assetClass: 'STOCKS',
-                dailyLossLimit: 500,
-                maxDrawdown: 0.15,
-                perTradeExposure: 0.05,
-              },
-              {
-                assetClass: 'CRYPTO',
-                dailyLossLimit: 500,
-                maxDrawdown: 0.2,
-                perTradeExposure: 0.05,
-                assetsEnabled: false,
-              },
-              {
-                assetClass: 'FOREX',
-                dailyLossLimit: 500,
-                maxDrawdown: 0.15,
-                perTradeExposure: 0.05,
-                assetsEnabled: false,
-              },
-              {
-                assetClass: 'GLOBAL',
-                dailyLossLimit: 1000,
-                maxDrawdown: 0.2,
-                perTradeExposure: 0.1,
-              },
-            ],
-          },
-        },
-      });
+        });
+      } else {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastSeenAt: new Date() },
+        });
+      }
 
       request.user = {
         id: user.id,

@@ -1,12 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { prisma } from '../lib/prisma.js';
 import {
   findUserProfile,
   findPortfolio,
   listUserTrades,
 } from '../lib/db/repos.js';
 import { getUserId } from '../plugins/auth.js';
-import { AlpacaClient } from '../lib/broker/alpaca_client.js';
+import { resolveBrokerClient } from '../lib/broker/broker_resolver.js';
 import { syncUserPendingOrders } from '../lib/execution_engine.js';
 import { computeTradeMetrics } from '../lib/analytics/metrics.js';
 
@@ -28,20 +29,20 @@ export async function analyticsRoutes(app: FastifyInstance) {
     await syncUserPendingOrders(userId);
     const profile = await findUserProfile(userId);
 
-    // Limit to last 1000 trades and select only needed fields to prevent OOM on large histories
+    // Limit to last 1000 trades
     const trades = await listUserTrades(userId, { take: 1000 });
 
     let currentEquity = 100000;
 
     if (profile?.isBrokerConnected && profile.alpacaApiKey && profile.alpacaSecretKey) {
       try {
-        const client = new AlpacaClient({
-          apiKey: profile.alpacaApiKey,
-          apiSecret: profile.alpacaSecretKey,
+        const client = resolveBrokerClient('STOCKS', {
+          alpacaApiKey: profile.alpacaApiKey,
+          alpacaSecretKey: profile.alpacaSecretKey,
         });
         const account = await client.getAccount();
         currentEquity = account.portfolioValue;
-      } catch (err) {
+      } catch {
         // Fallback
       }
     } else {
@@ -52,6 +53,8 @@ export async function analyticsRoutes(app: FastifyInstance) {
     }
 
     const totalTrades = trades.length;
+    const closedTrades = trades.filter((t) => t.realizedPnl !== null && t.realizedPnl !== undefined);
+
     const {
       winningTrades,
       losingTrades,
@@ -60,21 +63,79 @@ export async function analyticsRoutes(app: FastifyInstance) {
       totalRealizedPnl: totalPnl,
     } = computeTradeMetrics(trades);
 
-    const sharpeRatio: number = 1.45;
-    const maxDrawdown: number = 0.024;
+    // Section E.1: Compute from real data only.
+    // Query equity_snapshots table written by mark-to-market job
+    const snapshots = await prisma.equitySnapshot.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Group by calendar day to determine distinct daily snapshots
+    const dailyMap = new Map<string, number>();
+    for (const snap of snapshots) {
+      const day = snap.createdAt.toISOString().slice(0, 10);
+      dailyMap.set(day, Number(snap.equity));
+    }
+    const dailyEquities = Array.from(dailyMap.values());
+
+    let sharpeRatio: number | null = null;
+    let maxDrawdown: number | null = null;
+
+    if (dailyEquities.length >= 20) {
+      const dailyReturns: number[] = [];
+      for (let i = 1; i < dailyEquities.length; i++) {
+        const prev = dailyEquities[i - 1];
+        const curr = dailyEquities[i];
+        if (prev > 0) {
+          dailyReturns.push((curr - prev) / prev);
+        }
+      }
+
+      if (dailyReturns.length > 0) {
+        const meanDailyReturn = dailyReturns.reduce((sum, r) => sum + r, 0) / dailyReturns.length;
+        const variance =
+          dailyReturns.reduce((sum, r) => sum + Math.pow(r - meanDailyReturn, 2), 0) /
+          Math.max(1, dailyReturns.length - 1);
+        const dailyStd = Math.sqrt(variance);
+
+        // Daily annualized Sharpe (252 trading days/year, risk-free rate 0, stated in response)
+        sharpeRatio =
+          dailyStd > 0 ? Number(((meanDailyReturn / dailyStd) * Math.sqrt(252)).toFixed(4)) : 0;
+      }
+
+      let peak = dailyEquities[0];
+      let maxDd = 0;
+      for (const eq of dailyEquities) {
+        if (eq > peak) peak = eq;
+        const dd = peak > 0 ? (peak - eq) / peak : 0;
+        if (dd > maxDd) maxDd = dd;
+      }
+      maxDrawdown = Number(maxDd.toFixed(4));
+    }
+
+    const hasSufficientClosedTrades = closedTrades.length >= 10;
+    const hasSufficientSnapshots = dailyEquities.length >= 20;
 
     return reply.send({
       metrics: {
         totalTrades,
+        closedTrades: closedTrades.length,
+        dailySnapshotsCount: dailyEquities.length,
         winningTrades,
         losingTrades,
-        winRate,
-        profitFactor,
+        winRate: hasSufficientClosedTrades ? winRate : null,
+        winRateReason: !hasSufficientClosedTrades ? 'INSUFFICIENT_DATA' : undefined,
+        profitFactor: hasSufficientClosedTrades ? profitFactor : null,
+        profitFactorReason: !hasSufficientClosedTrades ? 'INSUFFICIENT_DATA' : undefined,
         sharpeRatio,
+        sharpeRatioReason: !hasSufficientSnapshots ? 'INSUFFICIENT_DATA' : undefined,
+        sharpeRatioRiskFreeRate: 0,
+        sharpeRatioBasis: 'DAILY_ANNUALIZED_252',
         maxDrawdown,
+        maxDrawdownReason: !hasSufficientSnapshots ? 'INSUFFICIENT_DATA' : undefined,
         totalRealizedPnl: totalPnl,
         currentEquity,
-        insufficientData: false,
+        insufficientData: !hasSufficientClosedTrades || !hasSufficientSnapshots,
       },
     });
   });
@@ -85,54 +146,35 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const parsed = timeframeSchema.safeParse(request.query);
     const timeframe = parsed.success ? parsed.data.timeframe : '1M';
 
-    const profile = await findUserProfile(userId);
-    let baseEquity = 100000;
-
-    if (profile?.isBrokerConnected && profile.alpacaApiKey && profile.alpacaSecretKey) {
-      try {
-        const client = new AlpacaClient({
-          apiKey: profile.alpacaApiKey,
-          apiSecret: profile.alpacaSecretKey,
-        });
-        const account = await client.getAccount();
-        baseEquity = account.portfolioValue;
-      } catch (err) {
-        // Fallback
-      }
-    } else {
-      const simPortfolio = await findPortfolio(userId, 'SIM');
-      if (simPortfolio) {
-        baseEquity = simPortfolio.equity;
-      }
-    }
-
-    const numPoints = timeframe === '1W' ? 7 : timeframe === '1M' ? 30 : 90;
+    // Section E.1: Query real equity_snapshots table only — NO sine waves or fake Math.sin
     const now = new Date();
-    const points = [];
-
-    let current = baseEquity;
-    for (let i = numPoints; i >= 0; i--) {
-      const pointDate = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      if (i === 0) {
-        current = baseEquity;
-      } else {
-        const noise = Math.sin(i / 2) * 50 + (i % 3 === 0 ? 30 : -20);
-        current = Math.max(100, baseEquity - (i * 12) + noise);
-      }
-      const benchmark = baseEquity * 0.98 + (numPoints - i) * 40;
-
-      points.push({
-        timestamp: pointDate.toISOString().split('T')[0],
-        equity: parseFloat(current.toFixed(2)),
-        benchmark: parseFloat(benchmark.toFixed(2)),
-      });
+    let startDate = new Date(0);
+    if (timeframe === '1W') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeframe === '1M') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (timeframe === '3M') {
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     }
+
+    const snapshots = await prisma.equitySnapshot.findMany({
+      where: {
+        userId,
+        createdAt: { gte: startDate },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const points = snapshots.map((s) => ({
+      timestamp: s.createdAt.toISOString().split('T')[0],
+      equity: Number(s.equity),
+    }));
 
     return reply.send({
       timeframe,
       points,
       isSimulated: true,
-      note: 'Equity curve computed from account balance.',
+      note: 'Equity curve computed from real equity snapshots.',
     });
   });
 

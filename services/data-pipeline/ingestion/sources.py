@@ -25,8 +25,6 @@ CRYPTO_ASSETS = [
     AssetConfig("ADA/USDT", "binance", "CRYPTO", ["15m", "1H", "4H", "1D"], 4, 2),
     AssetConfig("AVAX/USDT", "binance", "CRYPTO", ["15m", "1H", "4H", "1D"], 3, 2),
     AssetConfig("DOGE/USDT", "binance", "CRYPTO", ["15m", "1H", "4H", "1D"], 4, 2),
-    AssetConfig("BTC/USDT", "bybit", "CRYPTO", ["1H", "4H", "1D"], 3, 3),
-    AssetConfig("ETH/USDT", "bybit", "CRYPTO", ["1H", "4H", "1D"], 3, 3),
 ]
 
 # ── STOCKS — yfinance (no API key; works from Nigeria) ────────

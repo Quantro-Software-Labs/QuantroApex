@@ -7,12 +7,28 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load monorepo root .env then local .env
 _ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(_ROOT / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+
+
+class MLSuccessBar(BaseModel):
+    """
+    Pre-registered success bar for ML edge validation.
+    Immutable contract defined prior to testing.
+    """
+    min_pooled_trades: int = 300
+    min_positive_fold_pct: float = 60.0
+    max_drawdown_limit_pct: float = -35.0  # max drawdown better than -35% (e.g. -20% >= -35%)
+    min_bootstrap_90_lower_bound: float = 0.0  # block bootstrap 90% LB > 0
+    bootstrap_block_length_days: int = 20
+    bootstrap_n_samples: int = 1000
+    bootstrap_alpha: float = 0.10
+    fold_trade_threshold: int = 30  # folds with < 30 trades report Sharpe as null
 
 
 class Settings(BaseSettings):
@@ -38,6 +54,28 @@ class Settings(BaseSettings):
     data_service_host: str = "0.0.0.0"
     data_service_port: int = 8002
     log_level: str = "INFO"
+
+    # Cost modeling defaults: 10 bps per side crypto, 5 bps stocks
+    fee_bps_crypto: float = 10.0
+    fee_bps_stocks: float = 5.0
+    slippage_bps_crypto: float = 10.0
+    slippage_bps_stocks: float = 5.0
+
+    # Train/inference symmetry: gate inference strictly to rule signal bars
+    inference_signal_gating: bool = True
+
+    # Binance public history host (avoids HTTP 451 from US hosts)
+    binance_public_url: str = "https://data-api.binance.vision"
+
+    # Pre-registered success bar
+    success_bar: MLSuccessBar = Field(default_factory=MLSuccessBar)
+
+    # Rolling walk-forward configuration
+    rolling_train_months: int = 12
+    rolling_test_months: int = 3
+    rolling_step_months: int = 3
+    holdout_months: int = 6
+    holdout_log_path: str = "holdout_access.log"
 
     # Soft caps for local/dev runs (0 = unlimited)
     max_candles_per_fetch: int = 1000
@@ -157,3 +195,6 @@ def get_settings() -> Settings:
     if env_map["CHECKPOINT_DIR"]:
         kwargs["checkpoint_dir"] = env_map["CHECKPOINT_DIR"]
     return Settings(**kwargs)
+
+
+settings = get_settings()

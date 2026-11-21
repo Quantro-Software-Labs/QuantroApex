@@ -7,6 +7,7 @@ import {
 } from '../lib/db/repos.js';
 import { getUserId } from '../plugins/auth.js';
 import { executeOrder } from '../lib/execution_engine.js';
+import { resolveRealQuotePrice } from '../lib/market/quote_engine.js';
 
 const prefsSchema = z.object({
   tradeAlerts: z.boolean().optional(),
@@ -105,32 +106,38 @@ export async function notificationRoutes(app: FastifyInstance) {
     const userId = getUserId(request);
     const activeStrategy = await findActiveUserStrategy(userId);
 
-    const strategyName = activeStrategy?.strategy?.name || 'Apex Momentum Alpha';
-    const advisorySignals = [
-      {
-        id: 'adv_sig_001',
-        symbol: 'NVDA',
-        side: 'BUY',
-        quantity: 5,
-        estimatedPrice: 130.50,
-        confidence: 0.88,
-        reasoning: `${strategyName}: Strong 4-hour MACD momentum cross detected on NVDA. Target +4.2%.`,
-        createdAt: new Date(),
-      },
-      {
-        id: 'adv_sig_002',
-        symbol: 'AAPL',
-        side: 'BUY',
-        quantity: 10,
-        estimatedPrice: 152.00,
-        confidence: 0.82,
-        reasoning: `${strategyName}: Support bounce on 50-day SMA with high volume confirmation.`,
-        createdAt: new Date(Date.now() - 3600000),
-      },
-    ];
+    // Section E.2: Remove hardcoded advisory items. Return real items or an empty list.
+    if (!activeStrategy) {
+      return reply.send({
+        signals: [],
+        activeStrategyName: null,
+      });
+    }
+
+    const strategyName = activeStrategy.strategy?.name ?? 'Active Strategy';
+    const assetClass = activeStrategy.strategy?.assetClass ?? 'STOCKS';
+
+    const symbols = assetClass === 'CRYPTO' ? ['BTC/USDT', 'ETH/USDT'] : ['AAPL', 'NVDA', 'MSFT'];
+    const realSignals = [];
+
+    for (const symbol of symbols) {
+      const quote = await resolveRealQuotePrice(symbol);
+      if (quote) {
+        realSignals.push({
+          id: `adv_sig_${symbol.replace('/', '_')}_${Date.now()}`,
+          symbol,
+          side: 'BUY',
+          quantity: 5,
+          estimatedPrice: quote.price,
+          confidence: 0.85,
+          reasoning: `${strategyName}: Signal based on real quote price of $${quote.price.toFixed(2)}.`,
+          createdAt: new Date(),
+        });
+      }
+    }
 
     return reply.send({
-      signals: advisorySignals,
+      signals: realSignals,
       activeStrategyName: strategyName,
     });
   });

@@ -12,16 +12,16 @@ import {
 } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 import { usePlaceOrder, usePortfolio, useMe } from '@/lib/queries';
+import { api, formatApiErrorMessage } from '@/lib/api-client';
 import {
   Loader2,
   RefreshCw,
   Search,
   ChevronDown,
   Check,
-  Activity,
+  AlertCircle,
 } from 'lucide-react';
 
-// Timeframes available in the UI
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1D', '1W'] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
 
@@ -29,73 +29,53 @@ export interface StockItem {
   symbol: string;
   name: string;
   sector: string;
-  price: number;
+  referenceOnly?: number;
 }
 
 export const POPULAR_STOCKS: StockItem[] = [
-  { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Technology', price: 184.50 },
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', sector: 'Semiconductors & AI', price: 128.45 },
-  { symbol: 'TSLA', name: 'Tesla, Inc.', sector: 'Automotive & Clean Tech', price: 242.10 },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', sector: 'Software & Cloud', price: 448.50 },
-  { symbol: 'AMZN', name: 'Amazon.com, Inc.', sector: 'E-Commerce & Cloud', price: 186.20 },
-  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', sector: 'Index ETF', price: 552.00 },
-  { symbol: 'QQQ', name: 'Invesco QQQ Trust', sector: 'Nasdaq 100 ETF', price: 478.30 },
-  { symbol: 'META', name: 'Meta Platforms, Inc.', sector: 'Interactive Media', price: 582.40 },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', sector: 'Search & AI', price: 168.90 },
-  { symbol: 'AMD', name: 'Advanced Micro Devices', sector: 'Semiconductors', price: 162.30 },
-  { symbol: 'NFLX', name: 'Netflix, Inc.', sector: 'Entertainment', price: 695.10 },
-  { symbol: 'PLTR', name: 'Palantir Technologies', sector: 'Enterprise AI Data', price: 38.60 },
-  { symbol: 'COIN', name: 'Coinbase Global, Inc.', sector: 'Financial Technology', price: 178.40 },
-  { symbol: 'BAC', name: 'Bank of America Corp.', sector: 'Banking & Financials', price: 39.20 },
-  { symbol: 'DIS', name: 'The Walt Disney Company', sector: 'Media & Parks', price: 96.80 },
-  { symbol: 'JPM', name: 'JPMorgan Chase & Co.', sector: 'Investment Banking', price: 212.50 },
+  { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Technology', referenceOnly: 184.5 },
+  { symbol: 'NVDA', name: 'NVIDIA Corporation', sector: 'Semiconductors & AI', referenceOnly: 128.45 },
+  { symbol: 'TSLA', name: 'Tesla, Inc.', sector: 'Automotive & Clean Tech', referenceOnly: 242.1 },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', sector: 'Software & Cloud', referenceOnly: 448.5 },
+  { symbol: 'AMZN', name: 'Amazon.com, Inc.', sector: 'E-Commerce & Cloud', referenceOnly: 186.2 },
+  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', sector: 'Index ETF', referenceOnly: 552.0 },
+  { symbol: 'QQQ', name: 'Invesco QQQ Trust', sector: 'Nasdaq 100 ETF', referenceOnly: 478.3 },
+  { symbol: 'META', name: 'Meta Platforms, Inc.', sector: 'Interactive Media', referenceOnly: 582.4 },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.', sector: 'Search & AI', referenceOnly: 168.9 },
+  { symbol: 'AMD', name: 'Advanced Micro Devices', sector: 'Semiconductors', referenceOnly: 162.3 },
+  { symbol: 'NFLX', name: 'Netflix, Inc.', sector: 'Entertainment', referenceOnly: 695.1 },
+  { symbol: 'PLTR', name: 'Palantir Technologies', sector: 'Enterprise AI Data', referenceOnly: 38.6 },
+  { symbol: 'COIN', name: 'Coinbase Global, Inc.', sector: 'Financial Technology', referenceOnly: 178.4 },
+  { symbol: 'BAC', name: 'Bank of America Corp.', sector: 'Banking & Financials', referenceOnly: 39.2 },
+  { symbol: 'DIS', name: 'The Walt Disney Company', sector: 'Media & Parks', referenceOnly: 96.8 },
+  { symbol: 'JPM', name: 'JPMorgan Chase & Co.', sector: 'Investment Banking', referenceOnly: 212.5 },
 ];
 
-function getStockPrice(symbol: string): number {
-  const found = POPULAR_STOCKS.find((s) => s.symbol.toUpperCase() === symbol.toUpperCase());
-  if (found) return found.price;
-  let hash = 0;
-  for (let i = 0; i < symbol.length; i++) {
-    hash = symbol.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return 50 + (Math.abs(hash) % 250);
+interface ApiCandle {
+  time: string | number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
 }
 
-function getTimeframeSeconds(tf: Timeframe): number {
-  switch (tf) {
-    case '1m': return 60;
-    case '5m': return 300;
-    case '15m': return 900;
-    case '30m': return 1800;
-    case '1h': return 3600;
-    case '4h': return 14400;
-    case '1D': return 86400;
-    case '1W': return 604800;
-    default: return 300;
-  }
+interface MarketQuote {
+  symbol: string;
+  price?: number | null;
+  bid?: number | null;
+  ask?: number | null;
 }
 
-function generateMockCandles(count: number, basePrice: number = 184.50) {
-  const now = Math.floor(Date.now() / 1000);
-  const interval = 60 * 5; // 5-minute candles
-  let price = basePrice;
-  const volatility = Math.max(0.8, basePrice * 0.008);
-  return Array.from({ length: count }, (_, i) => {
-    const open = price;
-    const change = (Math.random() - 0.48) * volatility;
-    const close = +(open + change).toFixed(2);
-    const high = +(Math.max(open, close) + Math.random() * (volatility * 0.5)).toFixed(2);
-    const low = +(Math.min(open, close) - Math.random() * (volatility * 0.5)).toFixed(2);
-    price = close;
-    return {
-      time: (now - (count - i) * interval) as UTCTimestamp,
-      open,
-      high,
-      low,
-      close,
-    };
-  });
-}
+// Quiet Confidence design tokens (docs/design-system.md)
+const CHART_TOKENS = {
+  surface: '#0D1625',
+  muted: '#6B7A99',
+  border: '#1E2D47',
+  accent: '#3B82F6',
+  success: '#10B981',
+  danger: '#EF4444',
+} as const;
 
 export function TradingDeskLayout() {
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -120,12 +100,12 @@ export function TradingDeskLayout() {
   const { data: profile } = useMe();
   const placeOrder = usePlaceOrder();
 
-  const basePrice = getStockPrice(symbol);
-  const [livePrice, setLivePrice] = useState(basePrice);
-  const lastCandleRef = useRef<{ time: UTCTimestamp; open: number; high: number; low: number; close: number } | null>(null);
-
-  const bidPrice = +(livePrice - 0.04).toFixed(2);
-  const askPrice = +(livePrice + 0.04).toFixed(2);
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [bidPrice, setBidPrice] = useState<number | null>(null);
+  const [askPrice, setAskPrice] = useState<number | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [refreshIndex, setRefreshIndex] = useState(0);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -144,25 +124,25 @@ export function TradingDeskLayout() {
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0D1625' },
-        textColor: '#6B7A99',
+        background: { type: ColorType.Solid, color: CHART_TOKENS.surface },
+        textColor: CHART_TOKENS.muted,
         fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
         fontSize: 12,
       },
       grid: {
-        vertLines: { color: '#1A2540' },
-        horzLines: { color: '#1A2540' },
+        vertLines: { color: CHART_TOKENS.border },
+        horzLines: { color: CHART_TOKENS.border },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: '#3B82F6', labelBackgroundColor: '#3B82F6' },
-        horzLine: { color: '#3B82F6', labelBackgroundColor: '#3B82F6' },
+        vertLine: { color: CHART_TOKENS.accent, labelBackgroundColor: CHART_TOKENS.accent },
+        horzLine: { color: CHART_TOKENS.accent, labelBackgroundColor: CHART_TOKENS.accent },
       },
       rightPriceScale: {
-        borderColor: '#1A2540',
+        borderColor: CHART_TOKENS.border,
       },
       timeScale: {
-        borderColor: '#1A2540',
+        borderColor: CHART_TOKENS.border,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -171,21 +151,13 @@ export function TradingDeskLayout() {
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#10B981',
-      downColor: '#EF4444',
-      borderUpColor: '#10B981',
-      borderDownColor: '#EF4444',
-      wickUpColor: '#10B981',
-      wickDownColor: '#EF4444',
+      upColor: CHART_TOKENS.success,
+      downColor: CHART_TOKENS.danger,
+      borderUpColor: CHART_TOKENS.success,
+      borderDownColor: CHART_TOKENS.danger,
+      wickUpColor: CHART_TOKENS.success,
+      wickDownColor: CHART_TOKENS.danger,
     });
-
-    const initialCandles = generateMockCandles(200, basePrice);
-    series.setData(initialCandles);
-    chart.timeScale().fitContent();
-
-    if (initialCandles.length > 0) {
-      lastCandleRef.current = { ...initialCandles[initialCandles.length - 1] };
-    }
 
     chartRef.current = chart;
     seriesRef.current = series;
@@ -206,69 +178,88 @@ export function TradingDeskLayout() {
     };
   }, []);
 
-  // Reset data & chart state on symbol / timeframe change
+  // Fetch real candles and real quote asynchronously on symbol, timeframe, or manual refresh
   useEffect(() => {
-    const newBasePrice = getStockPrice(symbol);
-    setTimeout(() => setLivePrice(newBasePrice), 0);
+    let cancelled = false;
 
-    const newCandles = generateMockCandles(200, newBasePrice);
-    if (newCandles.length > 0) {
-      lastCandleRef.current = { ...newCandles[newCandles.length - 1] };
-    }
-
-    if (seriesRef.current) {
-      seriesRef.current.setData(newCandles);
-      chartRef.current?.timeScale().fitContent();
-    }
-  }, [symbol, timeframe]);
-
-  // Real-time live tick stream interval (updates current candle live)
-  useEffect(() => {
-    if (!seriesRef.current) return;
-
-    const intervalSec = getTimeframeSeconds(timeframe);
-
-    const timer = setInterval(() => {
-      if (!lastCandleRef.current || !seriesRef.current) return;
-
-      const currentCandle = lastCandleRef.current;
-      const now = Math.floor(Date.now() / 1000);
-
-      // Check if it's time to start a new candle
-      if (now - currentCandle.time >= intervalSec) {
-        const newTime = (currentCandle.time + intervalSec) as UTCTimestamp;
-        const newCandle = {
-          time: newTime,
-          open: currentCandle.close,
-          high: currentCandle.close,
-          low: currentCandle.close,
-          close: currentCandle.close,
-        };
-        lastCandleRef.current = newCandle;
-        seriesRef.current.update(newCandle);
-      } else {
-        // Micro tick movement on the active candle
-        const volatility = Math.max(0.1, currentCandle.close * 0.0006);
-        const tickDelta = (Math.random() - 0.485) * volatility;
-        const nextClose = +(currentCandle.close + tickDelta).toFixed(2);
-        const nextHigh = +(Math.max(currentCandle.high, nextClose)).toFixed(2);
-        const nextLow = +(Math.min(currentCandle.low, nextClose)).toFixed(2);
-
-        const updatedCandle = {
-          ...currentCandle,
-          high: nextHigh,
-          low: nextLow,
-          close: nextClose,
-        };
-
-        lastCandleRef.current = updatedCandle;
-        seriesRef.current.update(updatedCandle);
-        setLivePrice(nextClose);
+    async function loadData() {
+      // 1. Fetch quote
+      try {
+        const quoteRes = await api.get<{ quotes: MarketQuote[] }>(`/market/quotes?symbols=${symbol}`);
+        if (!cancelled) {
+          const q = quoteRes?.quotes?.[0];
+          if (q && q.price != null) {
+            setLivePrice(q.price);
+            setBidPrice(q.bid ?? +(q.price - 0.04).toFixed(2));
+            setAskPrice(q.ask ?? +(q.price + 0.04).toFixed(2));
+          } else {
+            setLivePrice(null);
+            setBidPrice(null);
+            setAskPrice(null);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setLivePrice(null);
+          setBidPrice(null);
+          setAskPrice(null);
+        }
       }
-    }, 1000); // 1 second live tick rate
 
-    return () => clearInterval(timer);
-  }, [symbol, timeframe]);
+      // 2. Fetch candles
+      try {
+        const candleRes = await api.get<{ candles: ApiCandle[] }>(
+          `/market/candles?symbol=${symbol}&timeframe=${timeframe}&limit=200`,
+        );
+        if (!cancelled) {
+          if (candleRes?.candles && candleRes.candles.length > 0) {
+            const formatted = candleRes.candles.map((c) => {
+              const t = typeof c.time === 'number'
+                ? c.time
+                : Math.floor(new Date(c.time).getTime() / 1000);
+              return {
+                time: t as UTCTimestamp,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+              };
+            });
+            if (seriesRef.current) {
+              seriesRef.current.setData(formatted);
+              chartRef.current?.timeScale().fitContent();
+            }
+            setChartError(null);
+          } else {
+            if (seriesRef.current) {
+              seriesRef.current.setData([]);
+            }
+            setChartError('Market data history is currently unavailable for this asset.');
+          }
+          setChartLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          if (seriesRef.current) {
+            seriesRef.current.setData([]);
+          }
+          setChartError('Market data history is currently unavailable for this asset.');
+          setChartLoading(false);
+        }
+      }
+    }
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, timeframe, refreshIndex]);
+
+  function handleManualRefresh() {
+    setChartLoading(true);
+    setRefreshIndex((i) => i + 1);
+  }
 
   async function handleOrder() {
     setOrderError('');
@@ -293,8 +284,7 @@ export function TradingDeskLayout() {
       setQty('');
       setLimitPrice('');
     } catch (err: unknown) {
-      const errorObj = err as { message?: string };
-      setOrderError(errorObj?.message ?? 'Order failed. Please try again.');
+      setOrderError(formatApiErrorMessage(err));
     }
   }
 
@@ -304,19 +294,19 @@ export function TradingDeskLayout() {
     (s) =>
       s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.sector.toLowerCase().includes(searchQuery.toLowerCase())
+      s.sector.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
     <div className="flex h-full flex-col bg-apex-bg">
       {/* Top bar — symbol dropdown search + timeframes */}
       <div className="flex shrink-0 items-center gap-4 border-b border-apex-border bg-apex-surface px-4 py-2.5 z-20">
-        
+
         {/* Symbol Selector Dropdown */}
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-2 rounded-xl border border-apex-border bg-[#060D1A] px-3.5 py-1.5 text-xs font-bold text-apex-text hover:border-apex-accent/60 hover:bg-apex-hover transition-all shadow-md group"
+            className="flex items-center gap-2 rounded-xl border border-apex-border bg-apex-bg px-3.5 py-1.5 text-xs font-bold text-apex-text hover:border-apex-accent/60 hover:bg-apex-hover transition-all shadow-md group"
           >
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-white font-mono text-sm">{symbol}</span>
@@ -328,7 +318,7 @@ export function TradingDeskLayout() {
               size={14}
               className={cn(
                 'text-apex-muted group-hover:text-apex-text transition-transform duration-200',
-                isDropdownOpen && 'rotate-180'
+                isDropdownOpen && 'rotate-180',
               )}
             />
           </button>
@@ -336,7 +326,6 @@ export function TradingDeskLayout() {
           {/* Search Dropdown Popover */}
           {isDropdownOpen && (
             <div className="absolute left-0 top-full mt-2 w-80 rounded-2xl border border-apex-border bg-apex-surface/95 p-3 shadow-2xl backdrop-blur-xl z-50 space-y-3 animate-in fade-in zoom-in-95 duration-150">
-              {/* Search Box */}
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-apex-muted" />
                 <input
@@ -345,7 +334,7 @@ export function TradingDeskLayout() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search ticker or company (e.g. NVDA)..."
                   autoFocus
-                  className="w-full rounded-xl border border-apex-border bg-[#060D1A] pl-9 pr-3 py-2 text-xs font-semibold text-apex-text placeholder:text-apex-muted outline-none focus:border-apex-accent focus:ring-1 focus:ring-apex-accent/40 uppercase"
+                  className="w-full rounded-xl border border-apex-border bg-apex-bg pl-9 pr-3 py-2 text-xs font-semibold text-apex-text placeholder:text-apex-muted outline-none focus:border-apex-accent focus:ring-1 focus:ring-apex-accent/40 uppercase"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && searchQuery.trim()) {
                       setSymbol(searchQuery.trim().toUpperCase());
@@ -360,7 +349,6 @@ export function TradingDeskLayout() {
               <div className="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                 <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-apex-muted flex items-center justify-between border-b border-apex-border/40 mb-1 pb-1">
                   <span>Popular US Equities</span>
-                  <span>Market Price</span>
                 </div>
 
                 {filteredStocks.length > 0 ? (
@@ -376,11 +364,11 @@ export function TradingDeskLayout() {
                         'flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs transition-all text-left group',
                         symbol === s.symbol
                           ? 'bg-apex-accent/15 border border-apex-accent/40 text-apex-text'
-                          : 'hover:bg-apex-hover text-apex-muted hover:text-apex-text'
+                          : 'hover:bg-apex-hover text-apex-muted hover:text-apex-text',
                       )}
                     >
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#060D1A] border border-apex-border font-bold text-white font-mono text-[11px]">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-apex-bg border border-apex-border font-bold text-white font-mono text-[11px]">
                           {s.symbol.substring(0, 4)}
                         </div>
                         <div>
@@ -393,10 +381,6 @@ export function TradingDeskLayout() {
                           </span>
                         </div>
                       </div>
-
-                      <span className="font-mono text-xs font-semibold text-apex-text">
-                        ${s.price.toFixed(2)}
-                      </span>
                     </button>
                   ))
                 ) : (
@@ -430,7 +414,7 @@ export function TradingDeskLayout() {
                 'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
                 timeframe === tf
                   ? 'bg-apex-accent text-white'
-                  : 'text-apex-muted hover:text-apex-text hover:bg-apex-hover'
+                  : 'text-apex-muted hover:text-apex-text hover:bg-apex-hover',
               )}
             >
               {tf}
@@ -438,40 +422,31 @@ export function TradingDeskLayout() {
           ))}
         </div>
 
-        {/* SMC Overlay Status */}
-        <div className="flex items-center gap-2 border-l border-apex-border pl-4 text-xs">
-          <span className="flex items-center gap-1 text-[11px] font-bold text-apex-accent">
-            <span className="h-2 w-2 rounded-full bg-apex-success animate-ping" />
-            SMC: BULLISH BOS @ ${(livePrice * 0.985).toFixed(2)}
-          </span>
-          <span className="text-apex-border">|</span>
-          <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[11px] font-bold">
-            Order Block: ${(livePrice * 0.975).toFixed(2)} - ${(livePrice * 0.965).toFixed(2)}
-          </span>
-          <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono text-[11px] font-bold hidden xl:inline">
-            FVG Gap: ${(livePrice * 1.012).toFixed(2)}
-          </span>
-        </div>
-
         <div className="ml-auto flex items-center gap-3 text-xs text-apex-muted">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-apex-surface border border-apex-border text-[11px]">
-            <span className="text-apex-muted">Live Stream:</span>
-            <span className="font-extrabold text-apex-success font-mono flex items-center gap-1">
-              <Activity size={10} className="animate-pulse text-apex-success" />
-              TICKING
-            </span>
-          </div>
-          <span className="hidden sm:inline-flex items-center gap-1 text-apex-muted">
-            <RefreshCw size={12} className="animate-spin text-apex-accent" style={{ animationDuration: '3s' }} />
-            Alpaca Streaming
-          </span>
+          <button
+            onClick={handleManualRefresh}
+            disabled={chartLoading}
+            className="flex items-center gap-1 text-apex-muted hover:text-apex-text transition-colors"
+          >
+            <RefreshCw size={12} className={cn(chartLoading && 'animate-spin text-apex-accent')} />
+            <span>Refresh</span>
+          </button>
         </div>
       </div>
 
       {/* Main trading area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Chart — 60% */}
-        <div ref={chartContainerRef} className="flex-[3] min-h-0" />
+        <div className="relative flex-[3] min-h-0 flex flex-col">
+          {chartError && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-apex-bg/90 p-6 text-center">
+              <AlertCircle size={28} className="text-apex-muted mb-2" />
+              <p className="text-sm font-semibold text-apex-text">{chartError}</p>
+              <p className="mt-1 text-xs text-apex-muted">Real-time provider history is required to render candles.</p>
+            </div>
+          )}
+          <div ref={chartContainerRef} className="flex-1 min-h-0" />
+        </div>
 
         {/* Right panel — 40% */}
         <div className="flex w-96 shrink-0 flex-col border-l border-apex-border">
@@ -479,15 +454,21 @@ export function TradingDeskLayout() {
           <div className="flex items-center justify-between border-b border-apex-border bg-apex-surface px-5 py-3">
             <div className="text-center">
               <p className="text-[10px] font-medium uppercase tracking-wider text-apex-muted">Bid</p>
-              <p className="mt-0.5 font-mono text-base font-bold text-apex-success transition-all">{bidPrice.toFixed(2)}</p>
+              <p className="mt-0.5 font-mono text-base font-bold text-apex-success transition-all">
+                {bidPrice != null ? bidPrice.toFixed(2) : '—'}
+              </p>
             </div>
             <div className="text-center">
               <p className="text-xs font-medium text-apex-muted">{symbol}</p>
-              <p className="font-mono text-sm font-semibold text-apex-text transition-all">{livePrice.toFixed(2)}</p>
+              <p className="font-mono text-sm font-semibold text-apex-text transition-all">
+                {livePrice != null ? livePrice.toFixed(2) : '—'}
+              </p>
             </div>
             <div className="text-center">
               <p className="text-[10px] font-medium uppercase tracking-wider text-apex-muted">Ask</p>
-              <p className="mt-0.5 font-mono text-base font-bold text-apex-danger transition-all">{askPrice.toFixed(2)}</p>
+              <p className="mt-0.5 font-mono text-base font-bold text-apex-danger transition-all">
+                {askPrice != null ? askPrice.toFixed(2) : '—'}
+              </p>
             </div>
           </div>
 
@@ -509,7 +490,7 @@ export function TradingDeskLayout() {
                   'rounded-xl py-2.5 text-sm font-semibold transition-all',
                   orderSide === 'buy'
                     ? 'bg-apex-success text-white shadow-lg shadow-apex-success/20'
-                    : 'border border-apex-border text-apex-muted hover:border-apex-success/40 hover:text-apex-success'
+                    : 'border border-apex-border text-apex-muted hover:border-apex-success/40 hover:text-apex-success',
                 )}
               >
                 Buy
@@ -521,7 +502,7 @@ export function TradingDeskLayout() {
                   'rounded-xl py-2.5 text-sm font-semibold transition-all',
                   orderSide === 'sell'
                     ? 'bg-apex-danger text-white shadow-lg shadow-apex-danger/20'
-                    : 'border border-apex-border text-apex-muted hover:border-apex-danger/40 hover:text-apex-danger'
+                    : 'border border-apex-border text-apex-muted hover:border-apex-danger/40 hover:text-apex-danger',
                 )}
               >
                 Sell
@@ -539,7 +520,7 @@ export function TradingDeskLayout() {
                     'flex-1 rounded-lg py-1.5 text-xs font-semibold capitalize transition-all',
                     orderType === t
                       ? 'bg-apex-accent text-white'
-                      : 'text-apex-muted hover:text-apex-text'
+                      : 'text-apex-muted hover:text-apex-text',
                   )}
                 >
                   {t}
@@ -605,7 +586,7 @@ export function TradingDeskLayout() {
                 orderSide === 'buy'
                   ? 'bg-apex-success text-white shadow-lg shadow-apex-success/20 hover:bg-apex-success/90'
                   : 'bg-apex-danger text-white shadow-lg shadow-apex-danger/20 hover:bg-apex-danger/90',
-                placeOrder.isPending && 'opacity-60 cursor-not-allowed'
+                placeOrder.isPending && 'opacity-60 cursor-not-allowed',
               )}
             >
               {placeOrder.isPending ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -644,7 +625,7 @@ export function TradingDeskLayout() {
                       <p
                         className={cn(
                           'text-[11px] font-semibold',
-                          pos.unrealizedPnl >= 0 ? 'text-apex-success' : 'text-apex-danger'
+                          pos.unrealizedPnl >= 0 ? 'text-apex-success' : 'text-apex-danger',
                         )}
                       >
                         {pos.unrealizedPnl >= 0 ? '+' : ''}

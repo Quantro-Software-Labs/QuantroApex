@@ -31,11 +31,22 @@ function polygonStatus(): 'CONNECTED' | 'MISSING_KEY' | 'ERROR' {
 
 export async function healthRoutes(app: FastifyInstance) {
   // Liveness probe — fast check for container orchestrators (Kubernetes/Docker)
-  app.get('/health', async () => ({
-    status: 'ok',
-    service: 'quantroapex-api-gateway',
-    timestamp: new Date().toISOString(),
-  }));
+  app.get('/health', async () => {
+    const alpaca = !!(config.marketData.alpacaKey && config.marketData.alpacaSecret);
+    const ccxt = !!(config.marketData.cryptoExchange);
+    const polygon = !!(config.polygon.apiKey);
+
+    return {
+      status: 'ok',
+      service: 'quantroapex-api-gateway',
+      marketDataProviders: {
+        alpaca: alpaca ? 'LIVE' : 'UNCONFIGURED',
+        ccxt: ccxt ? 'LIVE' : 'UNCONFIGURED',
+        polygon: polygon ? 'LIVE' : 'UNCONFIGURED',
+      },
+      timestamp: new Date().toISOString(),
+    };
+  });
 
   /** Public privacy policy HTML for store review (also host at apex.quantrolabs.app/privacy). */
   app.get('/legal/privacy', async (_request, reply) => {
@@ -92,28 +103,39 @@ export async function healthRoutes(app: FastifyInstance) {
       dbStatus = 'UNHEALTHY';
     }
 
-    let brokerStatus = 'SIMULATION_MODE';
+    let brokerStatus = 'DISCONNECTED';
     try {
       const brokerAcc = await defaultBrokerClient.getAccount();
-      if (brokerAcc.id !== 'mock_paper_account') {
+      if (brokerAcc.id === 'mock_paper_account') {
+        brokerStatus = process.env.NODE_ENV === 'test' ? 'CONNECTED_SANDBOX' : 'DEGRADED';
+      } else {
         brokerStatus = 'CONNECTED_SANDBOX';
       }
     } catch {
-      brokerStatus = 'ERROR';
+      brokerStatus = 'DEGRADED';
     }
 
     const memory = process.memoryUsage();
     const observer = getObserverStatus();
 
-    const isHealthy = dbStatus === 'HEALTHY';
+    const alpacaLive = !!(config.marketData.alpacaKey && config.marketData.alpacaSecret);
+    const ccxtLive = !!(config.marketData.cryptoExchange);
+    const polygonLive = !!(config.polygon.apiKey);
+
+    const isHealthy = dbStatus === 'HEALTHY' && brokerStatus !== 'ERROR';
 
     return reply.status(isHealthy ? 200 : 503).send({
-      status: isHealthy ? 'HEALTHY' : 'DEGRADED',
+      status: isHealthy && brokerStatus !== 'DEGRADED' ? 'HEALTHY' : 'DEGRADED',
       version: '1.0.0',
       uptimeSeconds: Math.floor(process.uptime()),
       subsystems: {
         database: { status: dbStatus, latencyMs: dbLatencyMs },
         broker: { status: brokerStatus },
+        marketDataProviders: {
+          alpaca: alpacaLive ? 'LIVE' : 'UNCONFIGURED',
+          ccxt: ccxtLive ? 'LIVE' : 'UNCONFIGURED',
+          polygon: polygonLive ? 'LIVE' : 'UNCONFIGURED',
+        },
         alpacaMarketData: { status: alpacaMarketDataStatus() },
         polygon: { status: polygonStatus() },
         marketObserver: {

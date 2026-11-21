@@ -15,7 +15,7 @@ export function BrokerConnectModal({
   onClose,
   onConnectSuccess,
 }: BrokerConnectModalProps) {
-  const [broker, setBroker] = useState<'alpaca' | 'oanda' | 'binance'>('alpaca');
+  const [broker] = useState<'alpaca'>('alpaca');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [saving, setSaving] = useState(false);
@@ -36,7 +36,6 @@ export function BrokerConnectModal({
     setError(null);
 
     try {
-      // Save credentials and mark broker connected
       await updateProfile.mutateAsync({
         profile: {
           globalBrainConsent: true,
@@ -44,45 +43,48 @@ export function BrokerConnectModal({
           alpacaApiKey: apiKey.trim(),
           alpacaSecretKey: apiSecret.trim(),
         },
-      } as any);
+      });
 
       onConnectSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to connect broker. Please check your credentials.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || 'Failed to connect broker. Please check your credentials.');
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-2xl border border-apex-border bg-apex-surface p-6 shadow-2xl shadow-black/80">
-        {/* Close Button */}
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+    >
+      <div className="relative w-full max-w-lg rounded-2xl border border-apex-border bg-apex-surface p-6 shadow-2xl">
         <button
           onClick={onClose}
+          aria-label="Close dialog"
           className="absolute right-4 top-4 rounded-lg p-1.5 text-apex-muted transition-colors hover:bg-apex-hover hover:text-apex-text"
         >
           <X size={18} />
         </button>
 
-        {/* Modal Header */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <ShieldCheck size={20} />
           </div>
           <div>
-            <h3 className="text-base font-bold text-apex-text">Connect Broker for Live Execution</h3>
-            <p className="text-xs text-apex-muted">Required before switching to Live Mode</p>
+            <h3 className="text-base font-bold text-apex-text">Connect Broker Credentials</h3>
+            <p className="text-xs text-apex-muted">Required for live market execution</p>
           </div>
         </div>
 
         <p className="mt-4 text-xs text-apex-muted leading-relaxed">
-          QuantroApex is non-custodial. Your funds stay safe inside your broker account. Connect your API keys below so Apex can execute trades on your behalf when Live Mode is active.
+          QuantroApex is non-custodial. Your funds stay inside your broker account. Connect your API keys below so Apex can route orders on your behalf when Live Mode is active.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          {/* Broker Selector */}
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-apex-muted">
               Select Broker / Exchange
@@ -90,7 +92,6 @@ export function BrokerConnectModal({
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setBroker('alpaca')}
                 className="rounded-xl border p-2.5 text-left text-xs font-semibold border-emerald-500/50 bg-emerald-500/10 text-emerald-400 shadow-sm"
               >
                 <div className="flex items-center justify-between">
@@ -127,7 +128,6 @@ export function BrokerConnectModal({
             </p>
           </div>
 
-          {/* API Key */}
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-apex-muted">
               API Key ({broker.toUpperCase()})
@@ -144,7 +144,6 @@ export function BrokerConnectModal({
             </div>
           </div>
 
-          {/* API Secret */}
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-apex-muted">
               API Secret Key
@@ -165,7 +164,6 @@ export function BrokerConnectModal({
             <p className="text-xs font-medium text-apex-danger">{error}</p>
           )}
 
-          {/* Actions */}
           <div className="pt-2 flex items-center justify-end gap-3">
             <button
               type="button"
@@ -180,7 +178,7 @@ export function BrokerConnectModal({
               className="flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2 text-xs font-bold text-black transition-all hover:bg-emerald-400 disabled:opacity-50"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : null}
-              {saving ? 'Connecting…' : 'Save Broker & Enable Live'}
+              {saving ? 'Saving…' : 'Save Broker Credentials'}
               {!saving && <ArrowRight size={14} />}
             </button>
           </div>

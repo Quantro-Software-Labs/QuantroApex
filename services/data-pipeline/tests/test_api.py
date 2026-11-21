@@ -13,8 +13,17 @@ def test_data_pipeline_health():
     assert "inference_gate" in data
 
 def test_data_pipeline_policy():
-    from inference.policy import is_inference_allowed, DECISION_GATE, PAPER_UNIVERSE
-    assert isinstance(PAPER_UNIVERSE, list)
+    from inference.policy import (
+        is_inference_allowed,
+        passes_confidence_gate,
+        DECISION_GATE,
+        PAPER_UNIVERSE,
+    )
+    assert isinstance(PAPER_UNIVERSE, frozenset)
     assert len(PAPER_UNIVERSE) > 0
-    assert is_inference_allowed(0.70) is True
-    assert is_inference_allowed(0.40) is False
+    assert passes_confidence_gate(0.70) is True
+    assert passes_confidence_gate(0.40) is False
+    allowed, _ = is_inference_allowed("AAPL", "STOCKS")
+    assert allowed is True
+    blocked, _ = is_inference_allowed("BTCUSDT", "CRYPTO")
+    assert blocked is False

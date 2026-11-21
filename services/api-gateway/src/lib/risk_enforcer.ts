@@ -5,8 +5,11 @@ export interface RiskValidationParams {
   userId?: string;
   riskVault: {
     dailyLossLimit: number | { toString(): string };
+    dailyLossLimitUnit?: 'PERCENT' | 'USD';
     maxDrawdown: number | { toString(): string };
+    maxDrawdownUnit?: 'PERCENT' | 'USD';
     perTradeExposure: number | { toString(): string };
+    perTradeExposureUnit?: 'PERCENT' | 'USD';
     emergencyStop?: boolean;
     emergencyStoppedAt?: Date | null;
     assetsEnabled?: boolean;
@@ -16,6 +19,7 @@ export interface RiskValidationParams {
   } | null;
   globalVault?: {
     dailyLossLimit: number | { toString(): string };
+    dailyLossLimitUnit?: 'PERCENT' | 'USD';
     emergencyStop?: boolean;
     emergencyStoppedAt?: Date | null;
   } | null;
@@ -33,6 +37,7 @@ export interface RiskValidationResult {
   code?:
     | 'NO_RISK_VAULT'
     | 'EMERGENCY_STOPPED'
+    | 'EMERGENCY_STOP_ACTIVE'
     | 'GLOBAL_EMERGENCY_STOP'
     | 'CLASS_EMERGENCY_STOP'
     | 'DAILY_LOSS_LIMIT_REACHED'
@@ -67,16 +72,19 @@ export function validateTradeRisk(params: RiskValidationParams): RiskValidationR
     if (globalVault.emergencyStop || globalVault.emergencyStoppedAt) {
       return {
         allowed: false,
-        code: 'GLOBAL_EMERGENCY_STOP',
+        code: 'EMERGENCY_STOP_ACTIVE',
         reason: 'Global emergency stop is active. All trading is paused.',
       };
     }
-    const globalLimit = Number(globalVault.dailyLossLimit);
-    if (globalRealizedLossToday >= globalLimit) {
+    const rawGlobalLimit = Number(globalVault.dailyLossLimit);
+    const globalUnit = globalVault.dailyLossLimitUnit ?? 'PERCENT';
+    const globalLossLimit =
+      globalUnit === 'PERCENT' ? portfolioEquity * rawGlobalLimit : rawGlobalLimit;
+    if (globalRealizedLossToday >= globalLossLimit) {
       return {
         allowed: false,
         code: 'GLOBAL_DAILY_LOSS_LIMIT',
-        reason: `Global daily loss limit ($${globalLimit.toFixed(2)}) has been reached.`,
+        reason: `Global daily loss limit ($${globalLossLimit.toFixed(2)}) has been reached.`,
       };
     }
   }
@@ -92,7 +100,7 @@ export function validateTradeRisk(params: RiskValidationParams): RiskValidationR
   if (riskVault.emergencyStop || riskVault.emergencyStoppedAt) {
     return {
       allowed: false,
-      code: 'CLASS_EMERGENCY_STOP',
+      code: 'EMERGENCY_STOP_ACTIVE',
       reason: `${cls} trading is currently halted via Emergency Stop.`,
     };
   }
@@ -105,17 +113,22 @@ export function validateTradeRisk(params: RiskValidationParams): RiskValidationR
     };
   }
 
-  const dailyLossLimit = Number(riskVault.dailyLossLimit);
-  if (realizedLossToday >= dailyLossLimit) {
+  const rawClassLimit = Number(riskVault.dailyLossLimit);
+  const classUnit = riskVault.dailyLossLimitUnit ?? 'PERCENT';
+  const classLossLimit =
+    classUnit === 'PERCENT' ? portfolioEquity * rawClassLimit : rawClassLimit;
+  if (realizedLossToday >= classLossLimit) {
     return {
       allowed: false,
       code: 'CLASS_DAILY_LOSS_LIMIT',
-      reason: `Daily loss limit ($${dailyLossLimit.toFixed(2)}) has been reached for ${cls}.`,
+      reason: `Daily loss limit ($${classLossLimit.toFixed(2)}) has been reached for ${cls}.`,
     };
   }
 
-  const maxExposurePct = Number(riskVault.perTradeExposure);
-  const maxAllowedTradeValue = portfolioEquity * maxExposurePct;
+  const rawExposure = Number(riskVault.perTradeExposure);
+  const exposureUnit = riskVault.perTradeExposureUnit ?? 'PERCENT';
+  const maxAllowedTradeValue =
+    exposureUnit === 'PERCENT' ? portfolioEquity * rawExposure : rawExposure;
   if (tradeValue > maxAllowedTradeValue) {
     return {
       allowed: false,
@@ -139,19 +152,38 @@ export function validateTradeRisk(params: RiskValidationParams): RiskValidationR
     return { allowed: false, code: 'ASSET_CLASS_DISABLED', reason: 'Forex trading is disabled.' };
   }
 
-  const maxDrawdown = Number(riskVault.maxDrawdown);
-  let computedDrawdownPct = currentDrawdownPct ?? 0;
-  if (currentDrawdownPct === undefined && peakEquity !== undefined && peakEquity > 0) {
-    if (portfolioEquity < peakEquity) {
+  const rawDrawdown = Number(riskVault.maxDrawdown);
+  const drawdownUnit = riskVault.maxDrawdownUnit ?? 'PERCENT';
+  let computedDrawdownPct = currentDrawdownPct;
+  if (computedDrawdownPct === undefined) {
+    if (!peakEquity || peakEquity <= 0) {
+      computedDrawdownPct = 0;
+    } else if (portfolioEquity < peakEquity) {
       computedDrawdownPct = (peakEquity - portfolioEquity) / peakEquity;
+    } else {
+      computedDrawdownPct = 0;
     }
   }
-  if (computedDrawdownPct >= maxDrawdown) {
-    return {
-      allowed: false,
-      code: 'DRAWDOWN_LIMIT_EXCEEDED',
-      reason: `Current drawdown (${(computedDrawdownPct * 100).toFixed(1)}%) exceeds the limit.`,
-    };
+
+  if (drawdownUnit === 'PERCENT') {
+    if (computedDrawdownPct !== undefined && computedDrawdownPct >= rawDrawdown) {
+      return {
+        allowed: false,
+        code: 'DRAWDOWN_LIMIT_EXCEEDED',
+        reason: `Current drawdown (${(computedDrawdownPct * 100).toFixed(1)}%) exceeds the limit.`,
+      };
+    }
+  } else {
+    // USD drawdown
+    const effectivePeak = peakEquity && peakEquity > 0 ? peakEquity : portfolioEquity;
+    const dollarDrawdown = Math.max(0, effectivePeak - portfolioEquity);
+    if (dollarDrawdown >= rawDrawdown) {
+      return {
+        allowed: false,
+        code: 'DRAWDOWN_LIMIT_EXCEEDED',
+        reason: `Current drawdown ($${dollarDrawdown.toFixed(2)}) exceeds the dollar limit ($${rawDrawdown.toFixed(2)}).`,
+      };
+    }
   }
 
   return { allowed: true };

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getUserId } from '../plugins/auth.js';
 import { paystackClient } from '../lib/payments/paystack_client.js';
+import { rawBodyPreParsingHook, RAW_BODY_MAX_BYTES } from '../lib/security/raw_body.js';
 
 const initializeSchema = z.object({
   amount: z.number().positive(), // Naira; converted to kobo
@@ -24,7 +25,13 @@ const subscriptionSchema = z.object({
 
 export async function paymentRoutes(app: FastifyInstance) {
   // Webhook — no auth (verified via Paystack signature)
-  app.post('/webhook', async (request, reply) => {
+  app.post(
+    '/webhook',
+    {
+      bodyLimit: RAW_BODY_MAX_BYTES,
+      preParsing: rawBodyPreParsingHook,
+    },
+    async (request, reply) => {
     const signature = String(request.headers['x-paystack-signature'] || '');
     const rawBody =
       typeof request.body === 'string'

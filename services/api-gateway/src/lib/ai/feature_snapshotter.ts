@@ -70,7 +70,7 @@ export async function snapshotFeatures(
         ? 'BEARISH_TREND'
         : 'RANGE_BOUND',
     volatility:
-      Math.abs(stock.changePct24h) > 3 ? 'HIGH' : Math.abs(stock.changePct24h) > 1 ? 'MEDIUM' : 'LOW',
+      Math.abs(stock.changePct24h ?? 0) > 3 ? 'HIGH' : Math.abs(stock.changePct24h ?? 0) > 1 ? 'MEDIUM' : 'LOW',
     sentimentScore: sentiment.score,
     sentimentLabel: sentiment.label,
     averageChangePct: sentiment.averageChangePct,
@@ -84,9 +84,9 @@ export async function snapshotFeatures(
       const row = await createMarketObservation({
         symbol: stock.symbol.toUpperCase(),
         assetClass: stock.assetClass as AssetClass,
-        price: stock.price,
-        changePct24h: stock.changePct24h,
-        volume: stock.volume,
+        price: stock.price ?? stock.referenceOnly ?? 0,
+        changePct24h: stock.changePct24h ?? 0,
+        volume: stock.volume ?? 0,
         technicalSnapshot: technicalSnapshot as Json,
         marketContext: marketContext as Json,
         source,
@@ -100,9 +100,9 @@ export async function snapshotFeatures(
   return {
     symbol: stock.symbol.toUpperCase(),
     assetClass: stock.assetClass as AssetClass,
-    price: stock.price,
-    changePct24h: stock.changePct24h,
-    volume: stock.volume,
+    price: stock.price ?? stock.referenceOnly ?? 0,
+    changePct24h: stock.changePct24h ?? 0,
+    volume: stock.volume ?? 0,
     source,
     technicalSnapshot,
     marketContext,

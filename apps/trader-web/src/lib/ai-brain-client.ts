@@ -83,168 +83,53 @@ export interface AISignalCardData {
 }
 
 export const aiBrainApi = {
-  /** Fetch SMC analysis + Technical indicators from ai-service (port 8001) */
+  /** Fetch SMC analysis from ai-service (port 8001) */
   getSMCAnalysis: async (
-    assetClass: string = 'stocks',
-    symbol: string = 'AAPL',
-    timeframe: string = '1h'
-  ): Promise<SMCAnalysisResponse> => {
+    assetClass = 'stocks',
+    symbol = 'AAPL',
+    timeframe = '1h',
+  ): Promise<SMCAnalysisResponse | null> => {
     try {
       const res = await fetch(
-        `${AI_SERVICE_BASE}/analysis/${assetClass.toLowerCase()}/${symbol.toUpperCase()}/${timeframe}`
+        `${AI_SERVICE_BASE}/analysis/${assetClass.toLowerCase()}/${symbol.toUpperCase()}/${timeframe}`,
       );
       if (res.ok) {
         return await res.json();
       }
     } catch {
-      // Graceful fallback for offline dev
+      // Service unreachable
     }
-
-    // Deterministic mock fallback matching ai-service format
-    return {
-      symbol,
-      asset_class: assetClass,
-      timeframe,
-      current_price: 184.5,
-      indicators_mode: 'normal',
-      smc: {
-        structures: [
-          { type: 'BOS', direction: 'BULLISH', price: 182.1, time: '2026-10-04 14:00' },
-        ],
-        order_blocks: [
-          { type: 'BULLISH', top: 181.5, bottom: 179.8, mitigated: false, time: '2026-10-04 10:00' },
-          { type: 'BEARISH', top: 189.2, bottom: 188.0, mitigated: false, time: '2026-10-04 09:00' },
-        ],
-        fvg: [
-          { type: 'BULLISH', top: 183.2, bottom: 182.5, filled: false, time: '2026-10-04 12:00' },
-        ],
-        liquidity_pools: [{ type: 'EQUAL_HIGHS', level: 188.5 }],
-        pd_zone: 'DISCOUNT',
-      },
-      indicators: {
-        rsi: 61.4,
-        macd: { macd: 1.25, signal: 0.85, hist: 0.4 },
-        ema: { ema20: 182.4, ema50: 179.1, ema200: 174.5 },
-      },
-      ai_signal: {
-        bias: 'BULLISH',
-        confidence: 0.894,
-        suggested_entry: 184.0,
-        stop_loss: 181.2,
-        take_profit: 191.5,
-        recommended_strategy: 'Apex Momentum Alpha',
-      },
-    };
+    return null;
   },
 
   /** Fetch Global Brain pipeline stats from data-pipeline (port 8002) */
-  getBrainStats: async (): Promise<GlobalBrainStats> => {
+  getBrainStats: async (): Promise<GlobalBrainStats | null> => {
     try {
       const res = await fetch(`${DATA_PIPELINE_BASE}/health`);
       if (res.ok) {
         return await res.json();
       }
     } catch {
-      // Graceful fallback
+      // Service unreachable
     }
-
-    return {
-      status: 'ok',
-      service: 'data-pipeline',
-      ohlcv_count: 4294065,
-      labelled_samples: 66481,
-      inference_gate: 0.55,
-      paper_universe_size: 14,
-    };
+    return null;
   },
 
-  /** Fetch curated Global Brain AI Signals feed for Advisory tab (US Stocks Only) */
+  /**
+   * Fetch curated Global Brain AI Signals.
+   * If real model inference is not actively producing a signal, returns an honest empty list.
+   * No fake signals or invented confidence numbers are returned.
+   */
   getAdvisorySignals: async (): Promise<AISignalCardData[]> => {
-    return [
-      {
-        id: 'sig-101',
-        symbol: 'NVDA',
-        assetClass: 'STOCKS',
-        bias: 'BUY',
-        confidence: 94.8,
-        entryPrice: 128.45,
-        stopLoss: 124.5,
-        takeProfit: 136.0,
-        timeframe: '15m',
-        strategyName: 'Apex Momentum Alpha',
-        smcInsight: 'Bullish Order Block mitigation at $127.80 with FVG gap fill.',
-        timestamp: 'Just now',
-      },
-      {
-        id: 'sig-102',
-        symbol: 'AAPL',
-        assetClass: 'STOCKS',
-        bias: 'BUY',
-        confidence: 88.6,
-        entryPrice: 183.8,
-        stopLoss: 181.0,
-        takeProfit: 190.0,
-        timeframe: '1h',
-        strategyName: 'Quantro Trend Rider',
-        smcInsight: 'EMA20 / EMA50 Golden Cross above 4H Discount Zone.',
-        timestamp: '12m ago',
-      },
-      {
-        id: 'sig-103',
-        symbol: 'TSLA',
-        assetClass: 'STOCKS',
-        bias: 'BUY',
-        confidence: 92.1,
-        entryPrice: 242.1,
-        stopLoss: 236.5,
-        takeProfit: 258.0,
-        timeframe: '30m',
-        strategyName: 'SMC Liquidity Sweep V2',
-        smcInsight: 'Equal Lows liquidity sweep at $240.00 followed by BOS structural break.',
-        timestamp: '25m ago',
-      },
-      {
-        id: 'sig-104',
-        symbol: 'MSFT',
-        assetClass: 'STOCKS',
-        bias: 'BUY',
-        confidence: 90.4,
-        entryPrice: 448.5,
-        stopLoss: 442.0,
-        takeProfit: 462.0,
-        timeframe: '1h',
-        strategyName: 'Apex Institutional Flow',
-        smcInsight: 'Premium-to-Discount zone transition with strong institutional volume delta.',
-        timestamp: '45m ago',
-      },
-      {
-        id: 'sig-105',
-        symbol: 'AMZN',
-        assetClass: 'STOCKS',
-        bias: 'BUY',
-        confidence: 86.9,
-        entryPrice: 186.2,
-        stopLoss: 183.4,
-        takeProfit: 192.5,
-        timeframe: '15m',
-        strategyName: 'Apex Momentum Alpha',
-        smcInsight: '15m Fair Value Gap (FVG) retest with bullish engulfing confirmation.',
-        timestamp: '1h ago',
-      },
-      {
-        id: 'sig-106',
-        symbol: 'SPY',
-        assetClass: 'STOCKS',
-        bias: 'BUY',
-        confidence: 95.2,
-        entryPrice: 552.0,
-        stopLoss: 547.5,
-        takeProfit: 561.0,
-        timeframe: '4h',
-        strategyName: 'Macro Structure Engine',
-        smcInsight: 'Daily Bullish Order Block defense with expanding market structure.',
-        timestamp: '2h ago',
-      },
-    ];
+    try {
+      const res = await fetch(`${AI_SERVICE_BASE}/signals/active`);
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data.signals ?? []);
+      }
+    } catch {
+      // Offline or not producing signals
+    }
+    return [];
   },
 };

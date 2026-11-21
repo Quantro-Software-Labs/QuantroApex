@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   IBrokerClient,
   BrokerAccount,
@@ -29,6 +30,12 @@ export class AlpacaClient implements IBrokerClient {
     return !!(this.apiKey && this.apiSecret);
   }
 
+  private assertConfiguredOrTest(action: string): void {
+    if (!this.isConfigured() && process.env.NODE_ENV !== 'test') {
+      throw new Error(`AlpacaClient.${action} failed: credentials not configured. Real broker required outside test mode.`);
+    }
+  }
+
   private getHeaders(): Record<string, string> {
     return {
       'APCA-API-KEY-ID': this.apiKey || '',
@@ -38,6 +45,7 @@ export class AlpacaClient implements IBrokerClient {
   }
 
   async getAccount(): Promise<BrokerAccount> {
+    this.assertConfiguredOrTest('getAccount');
     if (!this.isConfigured()) {
       let totalPositionValue = 0;
       this.mockPositions.forEach((pos) => {
@@ -67,6 +75,7 @@ export class AlpacaClient implements IBrokerClient {
   }
 
   async getPositions(): Promise<BrokerPosition[]> {
+    this.assertConfiguredOrTest('getPositions');
     if (!this.isConfigured()) {
       const positions: BrokerPosition[] = [];
       this.mockPositions.forEach((pos, symbol) => {
@@ -96,6 +105,7 @@ export class AlpacaClient implements IBrokerClient {
   }
 
   async createOrder(params: CreateOrderParams): Promise<BrokerOrder> {
+    this.assertConfiguredOrTest('createOrder');
     if (!this.isConfigured()) {
       // Mock instant fill for sandbox/testing — prefer limit, then live estimated, then seed
       const fillPrice = params.limitPrice || params.estimatedPrice || 100.0;
@@ -121,7 +131,7 @@ export class AlpacaClient implements IBrokerClient {
       }
 
       return {
-        id: `mock_ord_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: `mock_ord_${Date.now()}_${randomUUID().slice(0, 8)}`,
         clientOrderId: params.idempotencyKey,
         symbol: params.symbol,
         side: params.side,
@@ -191,6 +201,7 @@ export class AlpacaClient implements IBrokerClient {
   }
 
   async getOrder(orderId: string): Promise<BrokerOrder> {
+    this.assertConfiguredOrTest('getOrder');
     if (!this.isConfigured()) {
       return {
         id: orderId,
@@ -217,15 +228,24 @@ export class AlpacaClient implements IBrokerClient {
       symbol: data.symbol,
       side: data.side.toUpperCase() as 'BUY' | 'SELL',
       qty: parseFloat(data.qty),
+      qtyFilled: data.filled_qty ? parseFloat(data.filled_qty) : undefined,
       type: data.type.toUpperCase() as 'MARKET' | 'LIMIT',
       limitPrice: data.limit_price ? parseFloat(data.limit_price) : undefined,
-      status: data.status === 'filled' ? 'FILLED' : data.status === 'canceled' ? 'CANCELLED' : 'SUBMITTED',
+      status:
+        data.status === 'filled'
+          ? 'FILLED'
+          : data.status === 'partially_filled'
+          ? 'PARTIALLY_FILLED'
+          : data.status === 'canceled'
+          ? 'CANCELLED'
+          : 'SUBMITTED',
       fillPrice: data.filled_avg_price ? parseFloat(data.filled_avg_price) : undefined,
       filledAt: data.filled_at ? new Date(data.filled_at) : undefined,
     };
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    this.assertConfiguredOrTest('cancelOrder');
     if (!this.isConfigured()) {
       return;
     }
@@ -236,6 +256,68 @@ export class AlpacaClient implements IBrokerClient {
     });
     if (!res.ok) {
       throw new Error(`Alpaca cancelOrder error: ${res.statusText}`);
+    }
+  }
+
+  async getOrderByClientOrderId(clientOrderId: string): Promise<BrokerOrder | null> {
+    this.assertConfiguredOrTest('getOrderByClientOrderId');
+    if (!this.isConfigured()) {
+      return null;
+    }
+
+    const res = await fetch(
+      `${this.baseUrl}/orders:by_client_order_id?client_order_id=${encodeURIComponent(clientOrderId)}`,
+      { headers: this.getHeaders() },
+    );
+    if (res.status === 404) {
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error(`Alpaca getOrderByClientOrderId error: ${res.statusText}`);
+    }
+    const data = (await res.json()) as any;
+    return {
+      id: data.id,
+      clientOrderId: data.client_order_id,
+      symbol: data.symbol,
+      side: data.side.toUpperCase() as 'BUY' | 'SELL',
+      qty: parseFloat(data.qty),
+      qtyFilled: data.filled_qty ? parseFloat(data.filled_qty) : undefined,
+      type: data.type.toUpperCase() as 'MARKET' | 'LIMIT',
+      limitPrice: data.limit_price ? parseFloat(data.limit_price) : undefined,
+      status:
+        data.status === 'filled'
+          ? 'FILLED'
+          : data.status === 'partially_filled'
+          ? 'PARTIALLY_FILLED'
+          : data.status === 'canceled'
+          ? 'CANCELLED'
+          : 'SUBMITTED',
+      fillPrice: data.filled_avg_price ? parseFloat(data.filled_avg_price) : undefined,
+      filledAt: data.filled_at ? new Date(data.filled_at) : undefined,
+    };
+  }
+
+  async closePosition(symbol: string): Promise<void> {
+    this.assertConfiguredOrTest('closePosition');
+    if (!this.isConfigured()) return;
+    const res = await fetch(`${this.baseUrl}/positions/${encodeURIComponent(symbol)}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Alpaca closePosition error for ${symbol}: ${res.statusText}`);
+    }
+  }
+
+  async closeAllPositions(): Promise<void> {
+    if (!this.isConfigured()) return;
+    const res = await fetch(`${this.baseUrl}/positions`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`Alpaca closeAllPositions error: ${res.statusText}`);
     }
   }
 }

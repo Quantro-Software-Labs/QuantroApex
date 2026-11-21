@@ -1,5 +1,5 @@
 import { prisma } from '../prisma.js';
-import { executeOrder } from '../execution_engine.js';
+import { executeOrder, type ExecutionResult } from '../execution_engine.js';
 import { createActivityEntry } from '../db/repos.js';
 import { eventBus } from '../events/event_bus.js';
 import type { AgentPhase } from '@prisma/client';
@@ -88,8 +88,23 @@ export class ApexAgentLoopService {
     }
   }
 
-  private async processAgentTick(agent: { userId: string; phase: AgentPhase; currentStrategyId: string | null }) {
+  public async processAgentTick(agent: {
+    userId: string;
+    phase: AgentPhase;
+    currentStrategyId: string | null;
+  }): Promise<ExecutionResult | null> {
     const userId = agent.userId;
+
+    // Check emergency stop
+    const vaults = await prisma.riskVault.findMany({ where: { userId } });
+    const isEmergencyStopped = vaults.some((v) => v.emergencyStop || v.emergencyStoppedAt);
+    if (isEmergencyStopped) {
+      return {
+        success: false,
+        code: 'EMERGENCY_STOP_ACTIVE',
+        reason: 'Trading is halted via Emergency Stop.',
+      };
+    }
 
     // 1. Calculate trade evidence & advance agent phase if warranted
     const trades = await prisma.trade.findMany({
@@ -117,29 +132,20 @@ export class ApexAgentLoopService {
       eventBus.broadcastToUser(userId, 'ACTIVITY_LOGGED', entry);
     }
 
-    // 2. Sample automated paper trade execution if active strategy selected
-    if (agent.currentStrategyId) {
-      const symbols = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN'];
-      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
-      const side = Math.random() > 0.4 ? 'BUY' : 'SELL';
-      const quantity = Math.floor(Math.random() * 5) + 1;
-
-      const result = await executeOrder({
-        userId,
-        symbol,
-        side,
-        orderType: 'MARKET',
-        quantity,
-        assetClass: 'STOCKS',
-        isSimulated: true,
-        owner: 'APEX',
-        aiReasoning: `Apex Autopilot (${evaluation.phase} phase) identified momentum trigger on ${symbol}. Sized within Risk Vault limits.`,
-      });
-
-      if (result.success) {
-        process.stdout.write(`[ApexAgentLoop] Executed SIM order for user ${userId}: ${side} ${quantity} ${symbol}\n`);
-      }
+    // 2. Automated trade execution (Section E.3):
+    // Put behind AUTOPILOT_ENABLED (default false). When enabled it may act only on a signal from
+    // a real strategy source, and today there is none, so it places no orders.
+    // Math.random() decisions deleted and post-hoc fake rationale removed.
+    const isAutopilotEnabled = process.env.AUTOPILOT_ENABLED === 'true';
+    if (!isAutopilotEnabled) {
+      return null;
     }
+
+    if (agent.currentStrategyId) {
+      // Act only on signal from a real strategy source (today there is none connected, so place no orders)
+      return null;
+    }
+    return null;
   }
 }
 

@@ -11,16 +11,20 @@ export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT' | 'TRAILING_STOP';
 export type TradeOwner = 'APEX' | 'MANUAL';
 export type OrderStatus =
+  | 'PENDING_SUBMIT'
   | 'PENDING'
+  | 'QUEUED'
   | 'SUBMITTED'
   | 'ACCEPTED'
   | 'FILLED'
   | 'PARTIALLY_FILLED'
   | 'CANCELLED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'EXPIRED';
 export type AgentPhase = 'SEED' | 'LEARNING' | 'ADAPTING' | 'AUTONOMOUS';
 export type AssetClass = 'CRYPTO' | 'STOCKS' | 'FOREX' | 'GLOBAL';
 export type RiskLevel = 'CONSERVATIVE' | 'GROWTH' | 'AGGRESSIVE' | 'EXPERIMENTAL';
+export type LimitUnit = 'PERCENT' | 'USD';
 export type ActivityEventType =
   | 'TRADE_OPENED'
   | 'TRADE_CLOSED'
@@ -315,8 +319,11 @@ export interface RiskVault {
   userId: string;
   assetClass?: AssetClass;
   dailyLossLimit: number;
+  dailyLossLimitUnit?: LimitUnit;
   maxDrawdown: number;
+  maxDrawdownUnit?: LimitUnit;
   perTradeExposure: number;
+  perTradeExposureUnit?: LimitUnit;
   cryptoEnabled: boolean;
   stocksEnabled: boolean;
   forexEnabled: boolean;
@@ -602,6 +609,7 @@ export interface Order {
   owner?: TradeOwner;
   status: OrderStatus;
   isSimulated: boolean;
+  timeInForce?: string;
   brokerOrderId: string | null;
   idempotencyKey: string | null;
   createdAt: Date;

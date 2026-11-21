@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
@@ -45,9 +46,11 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3">
           <Link href="/" className="flex items-center gap-3 group">
-            <img
+            <Image
               src="/quantro_logo.jpeg"
               alt="Quantro Logo"
+              width={48}
+              height={48}
               className="h-12 w-12 rounded-2xl object-cover shadow-lg shadow-apex-accent/20 ring-1 ring-apex-border group-hover:scale-105 transition-transform"
             />
             <div className="flex flex-col text-left leading-none">

@@ -8,24 +8,24 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+RUN npm install -g pnpm
+
 # Copy root workspace configs & lockfile
-COPY package*.json ./
-COPY services/api-gateway/package*.json ./services/api-gateway/
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY services/api-gateway/package.json ./services/api-gateway/
+COPY apps/trader-web/package.json ./apps/trader-web/
 COPY services/api-gateway/prisma ./services/api-gateway/prisma
 
-# Install all dependencies including devDependencies for compilation
-RUN npm ci --workspace=@quantroapex/api-gateway
+# Install dependencies for api-gateway
+RUN pnpm --filter @quantroapex/api-gateway install --frozen-lockfile
 
 # Copy API gateway source code
 COPY services/api-gateway ./services/api-gateway
 
 # Generate Prisma Client & compile TypeScript
 WORKDIR /app/services/api-gateway
-RUN npx prisma generate
-RUN npm run build
-
-# Remove devDependencies for lean production bundle
-RUN npm prune --production
+RUN pnpm prisma generate
+RUN pnpm build
 
 # ── Stage 2: Production Runtime ─────────────────────────────────────────────
 FROM node:22-alpine AS runner
@@ -42,7 +42,7 @@ RUN addgroup -g 1001 -S nodejs && \
 
 # Copy built application & node_modules from builder stage
 COPY --from=builder --chown=quantroapex:nodejs /app/services/api-gateway/dist ./dist
-COPY --from=builder --chown=quantroapex:nodejs /app/services/api-gateway/node_modules ./node_modules
+COPY --from=builder --chown=quantroapex:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=quantroapex:nodejs /app/services/api-gateway/package.json ./package.json
 COPY --from=builder --chown=quantroapex:nodejs /app/services/api-gateway/prisma ./prisma
 

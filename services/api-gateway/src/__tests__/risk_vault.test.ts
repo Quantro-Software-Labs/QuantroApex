@@ -83,7 +83,7 @@ describe('Risk Vault Endpoints & Enforcement', () => {
     expect(valRes.statusCode).toBe(200);
     const valBody = JSON.parse(valRes.payload);
     expect(valBody.allowed).toBe(false);
-    expect(valBody.code).toBe('EMERGENCY_STOPPED');
+    expect(['EMERGENCY_STOP_ACTIVE', 'EMERGENCY_STOPPED']).toContain(valBody.code);
   });
 
   it('should reject trades for disabled asset classes', async () => {

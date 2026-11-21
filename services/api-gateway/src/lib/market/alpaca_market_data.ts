@@ -24,8 +24,8 @@ export class AlpacaMarketDataClient {
   private baseUrl: string;
 
   constructor(opts?: { apiKey?: string; apiSecret?: string; baseUrl?: string }) {
-    this.apiKey = opts?.apiKey || config.alpaca.apiKey || undefined;
-    this.apiSecret = opts?.apiSecret || config.alpaca.apiSecret || undefined;
+    this.apiKey = opts?.apiKey || config.marketData.alpacaKey || config.alpaca.apiKey || undefined;
+    this.apiSecret = opts?.apiSecret || config.marketData.alpacaSecret || config.alpaca.apiSecret || undefined;
     this.baseUrl = opts?.baseUrl || process.env.ALPACA_DATA_URL || 'https://data.alpaca.markets/v2';
   }
 

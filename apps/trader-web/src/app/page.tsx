@@ -8,15 +8,14 @@ import {
   Cpu,
   ArrowRight,
   CheckCircle2,
-  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function PublicLandingPage() {
   return (
-    <div className="min-h-screen bg-[#060D1A] text-apex-text selection:bg-apex-accent/30 selection:text-white">
+    <div className="min-h-screen bg-apex-bg text-apex-text selection:bg-apex-accent/30 selection:text-white">
       {/* ─── 1. Header Navigation ────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-apex-border/60 bg-[#060D1A]/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-apex-border/60 bg-apex-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           
           {/* Logo & Sub-brand */}
@@ -295,7 +294,7 @@ export default function PublicLandingPage() {
                 </ul>
               </div>
 
-              <div className="lg:col-span-2 rounded-xl border border-apex-border/80 bg-[#060D1A] p-4 font-mono text-xs space-y-3">
+              <div className="lg:col-span-2 rounded-xl border border-apex-border/80 bg-apex-bg p-4 font-mono text-xs space-y-3">
                 <div className="flex items-center justify-between border-b border-apex-border pb-2 text-apex-muted">
                   <span>SYMBOL: NVDA</span>
                   <span>PRICE: $128.45 (+3.42%)</span>
@@ -416,7 +415,7 @@ export default function PublicLandingPage() {
       </section>
 
       {/* ─── 7. Footer ──────────────────────────────────────────────────── */}
-      <footer className="border-t border-apex-border bg-[#040810] py-12">
+      <footer className="border-t border-apex-border bg-apex-bg py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             

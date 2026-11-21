@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { config } from '../config/index.js';
 import {
   findUserProfile,
   upsertUserProfile,
@@ -10,8 +11,11 @@ import {
 } from '../lib/db/repos.js';
 import { getUserId } from '../plugins/auth.js';
 import { executeOrder, syncUserPendingOrders } from '../lib/execution_engine.js';
-import { AlpacaClient, defaultBrokerClient } from '../lib/broker/alpaca_client.js';
+import { IBrokerClient } from '../lib/broker/broker_client.js';
+import { AlpacaClient } from '../lib/broker/alpaca_client.js';
+import { SimBrokerClient } from '../lib/broker/sim_broker.js';
 import { resolveBrokerClient } from '../lib/broker/broker_resolver.js';
+import { encryptSecret, decryptSecret } from '../lib/security/encryption.js';
 import { tradeLearningLogger } from '../lib/ai/trade_learning_logger.js';
 import { assertKycVerified } from './kyc.js';
 import { assertPlanFeature } from './subscriptions.js';
@@ -105,6 +109,14 @@ export async function executionRoutes(app: FastifyInstance) {
           message: err?.message ?? 'Identity verification required before live trading',
         });
       }
+
+      if (!config.trading.liveTradingEnabled) {
+        return reply.status(403).send({
+          error: 'LIVE_DISABLED',
+          code: 'LIVE_DISABLED',
+          message: 'LIVE trading is disabled in this environment.',
+        });
+      }
     }
 
     // Plan gates — server-side (UI flags alone are not enough)
@@ -122,13 +134,37 @@ export async function executionRoutes(app: FastifyInstance) {
       });
     }
 
-    const profile = await findUserProfile(userId);
-    const brokerClient = data.isSimulated
-      ? undefined
-      : resolveBrokerClient(data.assetClass, {
-          alpacaApiKey: profile?.alpacaApiKey,
-          alpacaSecretKey: profile?.alpacaSecretKey,
+    let brokerClient: IBrokerClient;
+    if (data.isSimulated) {
+      brokerClient = new SimBrokerClient({ userId });
+    } else {
+      if (!config.trading.liveTradingEnabled) {
+        return reply.status(403).send({
+          error: 'LIVE_DISABLED',
+          code: 'LIVE_DISABLED',
+          message: 'LIVE trading is disabled in this environment.',
         });
+      }
+
+      const profile = await findUserProfile(userId);
+      if (!profile?.alpacaApiKey || !profile?.alpacaSecretKey) {
+        return reply.status(400).send({
+          error: 'BROKER_CREDENTIALS_MISSING',
+          message: 'No broker credentials configured for LIVE trading. Connect your broker account in Settings.',
+        });
+      }
+      try {
+        brokerClient = resolveBrokerClient(data.assetClass, {
+          alpacaApiKey: profile.alpacaApiKey,
+          alpacaSecretKey: profile.alpacaSecretKey,
+        });
+      } catch (err: any) {
+        return reply.status(400).send({
+          error: 'BROKER_CREDENTIALS_MISSING',
+          message: err?.message || 'No broker credentials configured for LIVE trading.',
+        });
+      }
+    }
 
     const result = await executeOrder({
       userId,
@@ -150,8 +186,11 @@ export async function executionRoutes(app: FastifyInstance) {
     });
 
     if (!result.success) {
-      return reply.status(422).send({
-        error: 'ExecutionRejected',
+      const statusCode =
+        result.code === 'LIVE_DISABLED' ? 403 :
+        result.code === 'NO_BROKER_CREDENTIALS' ? 400 : 422;
+      return reply.status(statusCode).send({
+        error: result.code === 'LIVE_DISABLED' ? 'LIVE_DISABLED' : 'ExecutionRejected',
         code: result.code,
         message: result.reason,
       });
@@ -255,11 +294,31 @@ export async function executionRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'InvalidState', message: 'Order cannot be cancelled' });
     }
 
+    let brokerClient: IBrokerClient;
+    if (order.isSimulated) {
+      brokerClient = new SimBrokerClient({ userId });
+    } else {
+      const profile = await findUserProfile(userId);
+      if (!profile?.alpacaApiKey || !profile?.alpacaSecretKey) {
+        return reply.status(400).send({
+          error: 'BROKER_CREDENTIALS_MISSING',
+          message: 'No broker credentials configured for LIVE trading',
+        });
+      }
+      brokerClient = resolveBrokerClient(order.assetClass || 'STOCKS', {
+        alpacaApiKey: profile.alpacaApiKey,
+        alpacaSecretKey: profile.alpacaSecretKey,
+      });
+    }
+
     if (order.brokerOrderId) {
       try {
-        await defaultBrokerClient.cancelOrder(order.brokerOrderId);
-      } catch (_) {
-        // Ignore broker cancellation error if order is already processed
+        await brokerClient.cancelOrder(order.brokerOrderId);
+      } catch (err: any) {
+        return reply.status(502).send({
+          error: 'BrokerCancellationFailed',
+          message: err?.message || 'Broker failed to confirm cancellation',
+        });
       }
     }
 
@@ -286,11 +345,15 @@ export async function executionRoutes(app: FastifyInstance) {
       assetClass: data.assetClass,
       aiReasoning: data.reasoning,
       isSimulated: true,
+      brokerClient: new SimBrokerClient({ userId }),
     });
 
     if (!result.success) {
-      return reply.status(422).send({
-        error: 'ExecutionRejected',
+      const statusCode =
+        result.code === 'LIVE_DISABLED' ? 403 :
+        result.code === 'NO_BROKER_CREDENTIALS' ? 400 : 422;
+      return reply.status(statusCode).send({
+        error: result.code === 'LIVE_DISABLED' ? 'LIVE_DISABLED' : 'ExecutionRejected',
         code: result.code,
         message: result.reason,
       });
@@ -305,11 +368,15 @@ export async function executionRoutes(app: FastifyInstance) {
     const profile = await findUserProfile(userId);
 
     const isConnected = profile?.isBrokerConnected ?? false;
-    const apiKey = profile?.alpacaApiKey;
-    const maskedKey = apiKey && apiKey.length > 4 ? `PK...${apiKey.slice(-4)}` : null;
+    const hasKeys = Boolean(profile?.alpacaApiKey && profile?.alpacaSecretKey);
+    const apiKey = decryptSecret(profile?.alpacaApiKey);
+    const last4 = apiKey && apiKey.length >= 4 ? apiKey.slice(-4) : null;
+    const maskedKey = last4 ? `PK...${last4}` : null;
 
     return reply.send({
       isBrokerConnected: isConnected,
+      hasBrokerKeys: hasKeys,
+      brokerApiKeyLast4: last4,
       maskedApiKey: maskedKey,
       brokerName: 'Alpaca Securities',
     });
@@ -330,16 +397,19 @@ export async function executionRoutes(app: FastifyInstance) {
     const { apiKey, secretKey } = parsed.data;
 
     await upsertUserProfile(userId, {
-      alpacaApiKey: apiKey,
-      alpacaSecretKey: secretKey,
+      alpacaApiKey: encryptSecret(apiKey),
+      alpacaSecretKey: encryptSecret(secretKey),
       isBrokerConnected: true,
     });
 
-    const maskedKey = `PK...${apiKey.slice(-4)}`;
+    const last4 = apiKey.slice(-4);
+    const maskedKey = `PK...${last4}`;
 
     return reply.send({
       message: 'Alpaca credentials saved & broker connected.',
       isBrokerConnected: true,
+      hasBrokerKeys: true,
+      brokerApiKeyLast4: last4,
       maskedApiKey: maskedKey,
     });
   });
@@ -356,6 +426,8 @@ export async function executionRoutes(app: FastifyInstance) {
     return reply.send({
       message: 'Broker connection disconnected.',
       isBrokerConnected: false,
+      hasBrokerKeys: false,
+      brokerApiKeyLast4: null,
       maskedApiKey: null,
     });
   });

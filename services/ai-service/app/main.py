@@ -119,8 +119,9 @@ async def analysis(
             "candles": candles[-min(50, len(candles)) :],  # recent sample for clients
             **result,
         }
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        status_code = 503 if "No real market data" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @app.get("/patterns/list")
@@ -141,8 +142,9 @@ def patterns_detect(body: PatternDetectRequest) -> PatternDetectResponse:
             body.patterns,
         )
         return PatternDetectResponse(**result)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        status_code = 503 if "No real market data" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @app.post("/backtest", response_model=BacktestResponse)
@@ -160,8 +162,9 @@ def backtest_run(body: BacktestRequest) -> BacktestResponse:
             initial_cash=body.initial_cash,
         )
         return BacktestResponse(**result)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        status_code = 503 if "No real market data" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 def main() -> None:
