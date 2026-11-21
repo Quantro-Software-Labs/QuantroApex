@@ -62,12 +62,13 @@ from evaluation.metrics import (
     simulate_portfolio_mark_to_market,
 )
 from ingestion.binance_downloader import (
+    BinanceVisionDownloader,
     detect_kline_gaps,
     split_into_contiguous_segments,
     record_gaps_report,
 )
 from inference.policy import INFERENCE_MIN_WIN_PROB
-from processing.features import FEATURE_KEYS, annotate_smc, extract_indicator_features
+from processing.features import FEATURE_KEYS, annotate_smc, extract_indicator_features, is_bearish_setup, precompute_feature_matrix
 from processing.labeller import STRATEGIES, check_rule_signal
 from storage.timescale import TimescaleReader, apply_schema, close_pool
 from training.dataset import (
@@ -80,6 +81,112 @@ from training.model import GlobalBrain
 from training.sequences import attach_feature_sequences, filter_sequence_ready
 
 DEFAULT_FEE = 0.0010  # 10 bps round-trip
+
+REQUIRED_STREAMS: list[tuple[str, str]] = [
+    ("BTCUSDT", "1h"),
+    ("BTCUSDT", "4h"),
+    ("ETHUSDT", "1h"),
+    ("ETHUSDT", "4h"),
+    ("SOLUSDT", "1h"),
+    ("SOLUSDT", "4h"),
+    ("BNBUSDT", "1h"),
+    ("BNBUSDT", "4h"),
+    ("XRPUSDT", "1h"),
+    ("XRPUSDT", "4h"),
+]
+
+LISTING_CUTOFFS: dict[str, datetime] = {
+    "BTCUSDT": datetime(2019, 1, 1, tzinfo=timezone.utc) + timedelta(days=30),
+    "ETHUSDT": datetime(2019, 1, 1, tzinfo=timezone.utc) + timedelta(days=30),
+    "BNBUSDT": datetime(2019, 1, 1, tzinfo=timezone.utc) + timedelta(days=30),
+    "XRPUSDT": datetime(2019, 1, 1, tzinfo=timezone.utc) + timedelta(days=30),
+    "SOLUSDT": datetime(2020, 8, 11, tzinfo=timezone.utc) + timedelta(days=30),
+}
+
+
+def check_data_coverage(
+    parquet_dir: Path | str,
+    smoke: bool = False,
+) -> tuple[list[dict[str, Any]], str]:
+    """
+    Check dataset coverage across all required symbol and timeframe streams.
+    In full mode, fails loudly if any stream is missing or starts > 30 days after listing/2019-01-01.
+    Returns: (coverage_rows, coverage_table_markdown)
+    """
+    p_dir = Path(parquet_dir)
+    files = sorted(list(p_dir.glob("*.parquet")))
+
+    file_map: dict[tuple[str, str], Path] = {}
+    for f in files:
+        parts = f.stem.upper().split("_")
+        sym = parts[0]
+        tf = parts[1].lower() if len(parts) > 1 else "1h"
+        file_map[(sym, tf)] = f
+
+    required = [("BTCUSDT", "1h")] if smoke else REQUIRED_STREAMS
+    missing = [req for req in required if req not in file_map]
+    if missing:
+        raise RuntimeError(
+            f"Coverage check failed: Missing required streams in full mode: {missing}. "
+            f"All {len(required)} streams are strictly required."
+        )
+
+    coverage_rows: list[dict[str, Any]] = []
+    for sym, tf in required:
+        f = file_map[(sym, tf)]
+        df = pd.read_parquet(f)
+        if df.empty:
+            raise RuntimeError(f"Coverage check failed: Stream {sym} {tf} ({f}) is empty.")
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        first_bar = df["timestamp"].min()
+        last_bar = df["timestamp"].max()
+        bar_count = len(df)
+        gaps, _ = detect_kline_gaps(df, interval=tf, symbol=sym)
+        gap_count = len(gaps)
+
+        sec = 3600 if tf.lower() == "1h" else 14400
+        span_sec = (last_bar - first_bar).total_seconds()
+        expected_bars = int(round(span_sec / sec)) + 1 if span_sec > 0 else bar_count
+        missing_bars = max(0, expected_bars - bar_count)
+        pct_missing = (missing_bars / expected_bars * 100.0) if expected_bars > 0 else 0.0
+
+        if not smoke:
+            cutoff = LISTING_CUTOFFS.get(
+                sym, datetime(2019, 1, 1, tzinfo=timezone.utc) + timedelta(days=30)
+            )
+            if first_bar > cutoff:
+                raise RuntimeError(
+                    f"Coverage check failed: Stream {sym} {tf} starts at {first_bar.isoformat()}, "
+                    f"which is > 30 days after listing cutoff ({cutoff.isoformat()})."
+                )
+
+        coverage_rows.append({
+            "symbol": sym,
+            "timeframe": tf,
+            "first_bar": first_bar.isoformat(),
+            "last_bar": last_bar.isoformat(),
+            "bar_count": bar_count,
+            "gap_count": gap_count,
+            "pct_missing": round(pct_missing, 3),
+        })
+
+    lines = [
+        "| Symbol | Timeframe | First Bar | Last Bar | Bar Count | Gap Count | % Missing |",
+        "|--------|-----------|-----------|----------|-----------|-----------|-----------|",
+    ]
+    for r in coverage_rows:
+        lines.append(
+            f"| {r['symbol']} | {r['timeframe']} | {r['first_bar'][:19]} | {r['last_bar'][:19]} | "
+            f"{r['bar_count']:,} | {r['gap_count']} | {r['pct_missing']:.2f}% |"
+        )
+    coverage_table_md = "\n".join(lines)
+    print("\n" + "=" * 80)
+    print("DATA COVERAGE REPORT")
+    print("=" * 80)
+    print(coverage_table_md)
+    print("=" * 80 + "\n")
+    logger.info("Data coverage check completed successfully")
+    return coverage_rows, coverage_table_md
 
 
 def _as_utc(t: datetime) -> datetime:
@@ -537,41 +644,63 @@ def load_samples_from_parquet(
                         low = seg_df["low"].values
                         n_bars = len(seg_df)
 
+                        # Precompute feature matrix once for the segment (instant vectorization)
+                        seg_feat_matrix = precompute_feature_matrix(seg_df)
+
                         trade_indices = np.where(entries)[0]
                         for entry_idx in trade_indices:
                             if entry_idx < 59 or entry_idx >= n_bars - 1:
                                 continue
 
+                            # Direction check: in long-only MVP with no shorting, bearish setups must not open a trade
+                            smc = annotate_smc(seg_df, current_idx=entry_idx)
+                            if is_bearish_setup(smc):
+                                continue
+
                             fill_idx = entry_idx + 1
                             fill_open = seg_df.iloc[fill_idx]["open"]
-                            entry_price = float(fill_open * 1.0010)
+                            entry_price = float(fill_open)
 
                             exit_price = None
                             exit_time = None
                             hold_bars = 0
-                            outcome = "LOSS"
+                            sl_price = entry_price * (1.0 - sl)
+                            tp_price = entry_price * (1.0 + tp)
+                            max_h_bar = min(fill_idx + 60, n_bars)
 
                             # Check exits within current contiguous segment
-                            for t in range(fill_idx, min(fill_idx + 60, n_bars)):
+                            for t in range(fill_idx, max_h_bar):
                                 b_high = float(high[t])
                                 b_low = float(low[t])
-                                if b_low <= entry_price * (1.0 - sl):
-                                    exit_price = entry_price * (1.0 - sl)
+                                hit_sl = b_low <= sl_price
+                                hit_tp = b_high >= tp_price
+
+                                # Stop hits first if both hit on the same bar
+                                if hit_sl and hit_tp:
+                                    exit_price = sl_price
                                     exit_time = seg_df.iloc[t]["timestamp"].isoformat()
-                                    hold_bars = t - fill_idx
-                                    outcome = "LOSS"
+                                    hold_bars = t - fill_idx + 1
                                     break
-                                elif b_high >= entry_price * (1.0 + tp):
-                                    exit_price = entry_price * (1.0 + tp)
+                                elif hit_sl:
+                                    exit_price = sl_price
                                     exit_time = seg_df.iloc[t]["timestamp"].isoformat()
-                                    hold_bars = t - fill_idx
-                                    outcome = "WIN"
+                                    hold_bars = t - fill_idx + 1
+                                    break
+                                elif hit_tp:
+                                    exit_price = tp_price
+                                    exit_time = seg_df.iloc[t]["timestamp"].isoformat()
+                                    hold_bars = t - fill_idx + 1
                                     break
                                 elif bool(exits.iloc[t]):
                                     exit_price = float(close[t])
                                     exit_time = seg_df.iloc[t]["timestamp"].isoformat()
-                                    hold_bars = t - fill_idx
-                                    outcome = "WIN" if exit_price > entry_price else "LOSS"
+                                    hold_bars = t - fill_idx + 1
+                                    break
+                                elif t == max_h_bar - 1 and (t - fill_idx + 1) >= 60:
+                                    # 60 bar horizon reached
+                                    exit_price = float(close[t])
+                                    exit_time = seg_df.iloc[t]["timestamp"].isoformat()
+                                    hold_bars = 60
                                     break
 
                             # If trade reached end of segment without exiting:
@@ -584,30 +713,25 @@ def load_samples_from_parquet(
                                     post_gap_open = float(first_bar["open"])
                                     exit_time = first_bar["timestamp"].isoformat()
                                     stop_price = entry_price * (1.0 - sl)
-                                    if post_gap_open <= stop_price:
-                                        exit_price = post_gap_open
-                                        outcome = "LOSS"
-                                    else:
-                                        exit_price = post_gap_open
-                                        outcome = "WIN" if exit_price > entry_price else "LOSS"
+                                    exit_price = post_gap_open
                                     hold_bars = (n_bars - fill_idx) + 1
                                 else:
                                     # Open trade at end of all data is dropped
                                     continue
 
                             pnl_raw = float((exit_price - entry_price) / entry_price)
-                            features = extract_indicator_features(seg_df, entry_idx)
-                            smc = annotate_smc(seg_df, current_idx=entry_idx)
+                            net_pnl = pnl_raw - DEFAULT_FEE
+                            outcome = "WIN" if net_pnl > 0.0 else "LOSS"
+
+                            features = {
+                                k: float(seg_feat_matrix[entry_idx, f_i])
+                                for f_i, k in enumerate(FEATURE_KEYS)
+                            }
                             features["smc_structure"] = smc.get("structure")
                             features["smc_fvg_count"] = len(smc.get("fvgs", []))
                             features["smc_ob_count"] = len(smc.get("order_blocks", []))
 
-                            seq_start = entry_idx - 59
-                            seq_matrix = []
-                            for s_i in range(seq_start, entry_idx + 1):
-                                s_feats = extract_indicator_features(seg_df, s_i)
-                                vec = [float(s_feats.get(k) or 0.0) for k in FEATURE_KEYS]
-                                seq_matrix.append(vec)
+                            seq_matrix = seg_feat_matrix[entry_idx - 59 : entry_idx + 1]
 
                             all_samples.append({
                                 "symbol": symbol,
@@ -653,6 +777,7 @@ async def run_walk_forward(
     checkpoint_dir: str = "./checkpoints",
     smoke: bool = False,
     allow_holdout: bool = False,
+    plan_only: bool = False,
 ) -> dict[str, Any]:
     """Execute complete purged rolling walk-forward evaluation with fault tolerance."""
     settings = get_settings()
@@ -661,9 +786,27 @@ async def run_walk_forward(
 
     samples: list[dict[str, Any]] = []
     daily_closes_by_symbol: dict[str, dict[datetime, float]] = {}
+    coverage_rows: list[dict[str, Any]] = []
+    coverage_table_md: str = ""
 
     # 1. Load from Parquet if available or requested
-    if parquet_dir and Path(parquet_dir).exists():
+    if parquet_dir:
+        p_dir = Path(parquet_dir)
+        p_dir.mkdir(parents=True, exist_ok=True)
+        existing_files = list(p_dir.glob("*.parquet"))
+        req_needed = [("BTCUSDT", "1h")] if smoke else REQUIRED_STREAMS
+        file_map = {f.stem.upper(): f for f in existing_files}
+        missing_any = any(
+            f"{s}_{i.upper()}" not in file_map and f"{s}_{i.lower()}" not in file_map
+            for s, i in req_needed
+        )
+        if missing_any:
+            logger.info(f"Missing parquet klines in {p_dir}. Downloading from Binance Vision...")
+            downloader = BinanceVisionDownloader(data_dir=p_dir)
+            downloader.download_all(smoke=smoke)
+
+        # Run data coverage check (fails loudly in full mode if any stream missing or late start)
+        coverage_rows, coverage_table_md = check_data_coverage(parquet_dir, smoke=smoke)
         samples, daily_closes_by_symbol = load_samples_from_parquet(parquet_dir, smoke=smoke)
 
     # 2. Fall back to TimescaleDB
@@ -721,6 +864,66 @@ async def run_walk_forward(
                 horizon_bars=horizon_bars,
                 embargo_bars=embargo_bars,
             )
+
+    # Format and print fold schedule
+    fold_plan_lines = [
+        "| Fold | Train Range | Test Range | Train Samples | Test Samples |",
+        "|------|-------------|------------|---------------|--------------|",
+    ]
+    fold_plan: list[dict[str, Any]] = []
+    for train_part, test_part, meta in folds:
+        k = meta["fold"]
+        tr_from = meta.get("train_from", "")[:10]
+        tr_to = meta.get("train_to", "")[:10]
+        te_from = meta.get("test_from", "")[:10]
+        te_to = meta.get("test_to", "")[:10]
+        n_tr = len(train_part)
+        n_te = len(test_part)
+        fold_plan_lines.append(
+            f"| {k} | {tr_from} → {tr_to} | {te_from} → {te_to} | {n_tr:,} | {n_te:,} |"
+        )
+        fold_plan.append({
+            "fold": k,
+            "train_from": meta.get("train_from", ""),
+            "train_to": meta.get("train_to", ""),
+            "test_from": meta.get("test_from", ""),
+            "test_to": meta.get("test_to", ""),
+            "n_train": n_tr,
+            "n_test": n_te,
+        })
+    fold_plan_md = "\n".join(fold_plan_lines)
+    print("\n" + "=" * 80)
+    print(f"PLANNED FOLD SCHEDULE: {len(folds)} Total Folds")
+    print("=" * 80)
+    print(fold_plan_md)
+    print("=" * 80 + "\n")
+
+    if plan_only:
+        report = {
+            "mode": "SMOKE" if smoke else "FULL",
+            "verdict": "PLAN_ONLY",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "coverage_table": coverage_rows,
+            "coverage_table_md": coverage_table_md,
+            "planned_folds": len(folds),
+            "fold_plan": fold_plan,
+            "fold_plan_md": fold_plan_md,
+        }
+        out_json = os.path.join(checkpoint_dir, "walk_forward_report.json")
+        out_md = os.path.join(checkpoint_dir, "report.md")
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, default=str)
+        with open(out_md, "w", encoding="utf-8") as f:
+            f.write(
+                f"# QuantroApex Machine Learning Edge Report (Plan Only)\n\n"
+                f"**Mode**: `{report['mode']}`  \n"
+                f"**Machine Verdict**: `PLAN_ONLY`  \n"
+                f"**Generated At**: {report['generated_at']}  \n\n"
+                f"## Data Coverage Table\n\n{coverage_table_md}\n\n"
+                f"## Planned Fold Schedule ({len(folds)} Folds)\n\n{fold_plan_md}\n"
+            )
+        logger.info(f"Plan-only report written to {out_json} and {out_md}")
+        return report
 
     fold_summaries: list[dict[str, Any]] = []
     all_oos_test_samples: list[dict[str, Any]] = []
@@ -841,10 +1044,14 @@ async def run_walk_forward(
         b_sharpe = compute_daily_sharpe(b_daily, annualization_factor=annualization_factor)
         btc_sharpe = compute_daily_sharpe(btc_daily, annualization_factor=annualization_factor)
 
+        train_wins = sum(1 for s in train_samples if s.get("outcome") == "WIN")
+        train_base_rate = float(train_wins / len(train_samples) * 100.0) if train_samples else 0.0
+
         fold_row = {
             "fold": k,
             "n_train": meta["n_train"],
             "n_test": meta["n_test"],
+            "train_base_rate_pct": round(train_base_rate, 2),
             "test_from": meta.get("test_from", ""),
             "test_to": meta.get("test_to", ""),
             "model": {
@@ -862,7 +1069,6 @@ async def run_walk_forward(
                 "annualized_sharpe": r_sharpe,
             },
             "buy_and_hold": {
-                "trades_taken": float(len(test_samples)),
                 "annualized_sharpe": b_sharpe,
                 "btc_only_sharpe": btc_sharpe,
             },
@@ -958,6 +1164,14 @@ async def run_walk_forward(
     n_total_folds = len(fold_summaries)
     pos_folds_pct = (positive_folds / n_total_folds * 100.0) if n_total_folds > 0 else 0.0
 
+    # Pooled training base rate across all folds
+    all_train_samples = [s for train_p, _, _ in folds for s in train_p]
+    pooled_train_wins = sum(1 for s in all_train_samples if s.get("outcome") == "WIN")
+    pooled_train_base_rate = (
+        float(pooled_train_wins / len(all_train_samples) * 100.0)
+        if all_train_samples else 0.0
+    )
+
     # Evaluate pre-registered success bar on portfolio
     machine_verdict, checks = evaluate_success_bar(
         pooled_trades=pooled_trades_taken,
@@ -968,6 +1182,7 @@ async def run_walk_forward(
         positive_folds_pct=pos_folds_pct,
         max_drawdown_pct=pooled_m_dd,
         bar=settings.success_bar,
+        smoke=smoke,
     )
 
     # Compute granular diagnostics across the 10 signal streams
@@ -976,6 +1191,7 @@ async def run_walk_forward(
         model_preds=all_oos_model_preds,
         win_probs=all_oos_win_probs,
         fee_round_trip=fee,
+        train_base_rate_pct=round(pooled_train_base_rate, 2),
     )
 
     # Final holdout handling: guarded strictly
@@ -1005,12 +1221,17 @@ async def run_walk_forward(
         }
 
     report: dict[str, Any] = {
+        "mode": "SMOKE" if smoke else "FULL",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "verdict": machine_verdict,
         "pre_registered_success_bar": checks,
         "n_folds": n_total_folds,
         "positive_folds": f"{positive_folds} of {n_total_folds}",
         "positive_folds_pct": round(pos_folds_pct, 1),
+        "coverage_table": coverage_rows,
+        "coverage_table_md": coverage_table_md,
+        "fold_plan": fold_plan,
+        "fold_plan_md": fold_plan_md,
         "portfolio": {
             "max_concurrent_positions": 10,
             "position_size_frac": 0.10,
@@ -1056,13 +1277,30 @@ async def run_walk_forward(
     markdown_table = "\n".join(table_lines)
     report["markdown_table"] = markdown_table
 
+    costs_info = diagnostics.get("turnover_and_costs", {})
+    cost_pnl_str = (
+        f"{costs_info.get('costs_as_pct_of_gross_pnl')}%"
+        if costs_info.get("costs_as_pct_of_gross_pnl") is not None
+        else "null (Gross PnL <= 0)"
+    )
+    cost_cap_str = f"{costs_info.get('costs_as_pct_of_capital_traded', 0.0)}%"
+
     # Format Markdown Report
     md_content = f"""# QuantroApex Machine Learning Edge Report
 
+**Mode**: `{report['mode']}`  
 **Machine Verdict**: `{machine_verdict}`  
 **Generated At**: {report['generated_at']}  
 **Positive Folds**: {report['positive_folds']} ({report['positive_folds_pct']}%)  
 **Block Bootstrap 90% Lower Bound (Model - B&H Basket)**: {bootstrap_90_lb:+.3f}  
+
+## Data Coverage Table
+
+{coverage_table_md}
+
+## Planned Fold Schedule ({len(folds)} Folds)
+
+{fold_plan_md}
 
 ## Portfolio Structure
 - 10 signal streams (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT × 1h, 4h).
@@ -1082,6 +1320,11 @@ async def run_walk_forward(
 - Bootstrap 90% Lower Bound > 0: `{'PASSED' if checks['bootstrap_lb_passed'] else 'FAILED'}` ({bootstrap_90_lb:+.3f})
 - Positive Folds >= 60%: `{'PASSED' if checks['positive_folds_passed'] else 'FAILED'}` ({pos_folds_pct:.1f}%)
 - Max Drawdown > -35%: `{'PASSED' if checks['max_drawdown_passed'] else 'FAILED'}` ({pooled_m_dd:.1f}%)
+
+## Diagnostics
+- **Training Base Rate**: {diagnostics.get('train_base_rate_pct', 'N/A')}% positive labels
+- **Costs as % of Gross PnL**: {cost_pnl_str}
+- **Costs as % of Capital Traded**: {cost_cap_str}
 """
 
     out_json = os.path.join(checkpoint_dir, "walk_forward_report.json")
@@ -1112,6 +1355,7 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", type=str, default="./checkpoints")
     parser.add_argument("--smoke", action="store_true", help="Fast CPU smoke test (2 folds)")
     parser.add_argument("--final-holdout", action="store_true", help="Unlock and audit final 6-month holdout")
+    parser.add_argument("--plan-only", action="store_true", help="Stop before training and output data coverage and fold plan")
     args = parser.parse_args()
 
     async def _run() -> None:
@@ -1127,6 +1371,7 @@ def main() -> None:
             checkpoint_dir=args.checkpoint_dir,
             smoke=args.smoke,
             allow_holdout=args.final_holdout,
+            plan_only=args.plan_only,
         )
         await close_pool()
 

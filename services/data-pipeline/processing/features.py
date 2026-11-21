@@ -169,7 +169,11 @@ def annotate_smc(df: pd.DataFrame, lookback: int = 2, current_idx: int | None = 
     if current_idx < 0:
         return {"structure": "UNKNOWN", "order_blocks": [], "fvgs": [], "liquidity": {"eq_highs": [], "eq_lows": []}}
 
-    sub_df = df.iloc[: current_idx + 1]
+    # Look back at most 100 bars prior to current_idx:
+    # structure only inspects the last 2 swings, order blocks only check the last 5 bars,
+    # and FVGs only retain the last 10. Limiting lookback prevents O(N^2) scans.
+    window_start = max(0, current_idx - 100)
+    sub_df = df.iloc[window_start : current_idx + 1]
     n = len(sub_df)
     if n < lookback * 2 + 5:
         return {"structure": "UNKNOWN", "order_blocks": [], "fvgs": [], "liquidity": {"eq_highs": [], "eq_lows": []}}
@@ -252,6 +256,26 @@ def annotate_smc(df: pd.DataFrame, lookback: int = 2, current_idx: int | None = 
         "fvgs": fvgs[-10:],
         "liquidity": liquidity,
     }
+
+
+def is_bearish_setup(smc: dict[str, Any]) -> bool:
+    """
+    Check if the SMC context is bearish.
+    In the long-only MVP with no shorting, bearish setups must not open long trades.
+    """
+    if not isinstance(smc, dict):
+        return False
+    structure = str(smc.get("structure") or smc.get("smc_structure") or "").upper()
+    if structure == "BEARISH":
+        return True
+    obs = smc.get("order_blocks", [])
+    if obs and isinstance(obs, list):
+        last_ob = obs[-1]
+        if isinstance(last_ob, dict) and last_ob.get("type") == "BEARISH_OB":
+            return True
+        if any(isinstance(ob, dict) and ob.get("type") == "BEARISH_OB" for ob in obs) and structure != "BULLISH":
+            return True
+    return False
 
 
 def features_to_vector(features: dict[str, Any]) -> np.ndarray:

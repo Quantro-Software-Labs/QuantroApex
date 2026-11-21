@@ -45,6 +45,9 @@ __pycache__/
 # Data pipeline model checkpoints
 checkpoints/
 *.pt
+*.parquet
+data/
+services/data-pipeline/data/
 services/data-pipeline/checkpoints/
 
 # Prisma

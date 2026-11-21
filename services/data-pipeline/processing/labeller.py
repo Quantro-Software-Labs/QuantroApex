@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from processing.features import annotate_smc, extract_indicator_features
+from processing.features import annotate_smc, extract_indicator_features, is_bearish_setup
 from storage.timescale import TimescaleReader, TimescaleWriter
 from config import settings
 
@@ -237,6 +237,11 @@ def check_rule_signal(
         return False
 
     sub_df = df.iloc[: actual_idx + 1]
+    # In long-only MVP with no shorting, bearish setups never open a trade
+    smc = annotate_smc(sub_df, current_idx=len(sub_df) - 1)
+    if is_bearish_setup(smc):
+        return False
+
     for _, strat in candidates:
         try:
             entry_mask = np.asarray(strat["entry"](sub_df)).astype(bool)
@@ -392,13 +397,17 @@ class StrategyLabeller:
         sl: float | None,
         tp: float | None,
         asset_class: str = "CRYPTO",
+        fee_rate: float | None = None,
+        horizon_bars: int = 60,
     ) -> list[dict[str, Any]]:
         # Fills: enter at NEXT bar's open.
         # Check SL and TP against bar high/low (if both hit in one bar, stop hits first).
         # Fees + slippage: crypto default 10 bps fee + 10 bps slippage; stocks default 5 bps fee + 5 bps slippage.
+        # Max horizon: 60 bars.
         # Trades still open at end of data are dropped, never force-closed.
         is_crypto = str(asset_class).upper() == "CRYPTO"
-        fee_rate = (settings.fee_bps_crypto if is_crypto else settings.fee_bps_stocks) / 10_000.0
+        if fee_rate is None:
+            fee_rate = (settings.fee_bps_crypto if is_crypto else settings.fee_bps_stocks) / 10_000.0
         slip_rate = (settings.slippage_bps_crypto if is_crypto else settings.slippage_bps_stocks) / 10_000.0
 
         opens = df["open"].to_numpy(dtype=np.float64)
@@ -417,6 +426,9 @@ class StrategyLabeller:
         for i in range(n):
             if not in_pos:
                 if bool(entries.iloc[i]):
+                    smc = annotate_smc(df, current_idx=i)
+                    if is_bearish_setup(smc):
+                        continue
                     entry_bar = i + 1
                     if entry_bar >= n:
                         # Next bar does not exist in dataset; cannot enter
@@ -451,12 +463,14 @@ class StrategyLabeller:
                 elif bool(exits.iloc[i]):
                     exit_price = float(closes[i]) * (1.0 - slip_rate)
                     exit_reason = "RULE_EXIT"
+                elif (i - signal_idx) >= horizon_bars:
+                    exit_price = float(closes[i]) * (1.0 - slip_rate)
+                    exit_reason = "HORIZON"
 
                 if exit_price is not None:
-                    buy_cost = entry_fill_price * (1.0 + fee_rate)
-                    sell_proceeds = exit_price * (1.0 - fee_rate)
-                    ret = (sell_proceeds - buy_cost) / buy_cost
-                    outcome = "WIN" if ret > 0.0 else "LOSS"
+                    pnl_raw = float((exit_price - entry_fill_price) / entry_fill_price)
+                    net_pnl = pnl_raw - fee_rate
+                    outcome = "WIN" if net_pnl > 0.0 else "LOSS"
 
                     trades.append(
                         {
@@ -465,7 +479,7 @@ class StrategyLabeller:
                             "exit_time": times[i],
                             "entry_price": entry_fill_price,
                             "exit_price": exit_price,
-                            "pnl_pct": float(ret),
+                            "pnl_pct": pnl_raw,
                             "outcome": outcome,
                             "hold_duration": i - signal_idx,
                             "exit_reason": exit_reason,

@@ -40,6 +40,7 @@ def compute_diagnostics(
     model_preds: list[int],
     win_probs: list[float],
     fee_round_trip: float,
+    train_base_rate_pct: float | None = None,
 ) -> dict[str, Any]:
     """
     Compute full diagnostics comparing rule-only and model out-of-sample trades.
@@ -120,21 +121,28 @@ def compute_diagnostics(
     total_costs = float(len(model_samples) * fee_round_trip) * 100.0
     net_pnl = total_gross - total_costs
     cost_as_pct_gross = (
-        float(abs(total_costs / total_gross) * 100.0) if abs(total_gross) > 1e-6 else 0.0
+        round(float(abs(total_costs / total_gross) * 100.0), 2) if total_gross > 0 else None
     )
+    cost_as_pct_capital = round(float(fee_round_trip * 100.0), 4)
 
     return {
         "by_setup_type": by_setup,
         "by_direction": by_direction,
         "by_symbol": by_symbol,
         "by_timeframe": by_timeframe,
+        "train_base_rate_pct": train_base_rate_pct,
         "calibration": calibration,
+        "calibration_summary": {
+            "train_base_rate_pct": train_base_rate_pct,
+            "buckets": calibration,
+        },
         "turnover_and_costs": {
             "model_trades_taken": len(model_samples),
             "rule_trades_available": len(annotated),
             "total_gross_pnl_pct": round(total_gross, 2),
             "total_costs_paid_pct": round(total_costs, 2),
             "net_pnl_pct": round(net_pnl, 2),
-            "costs_as_pct_of_gross_pnl": round(cost_as_pct_gross, 2),
+            "costs_as_pct_of_gross_pnl": cost_as_pct_gross,
+            "costs_as_pct_of_capital_traded": cost_as_pct_capital,
         },
     }

@@ -162,6 +162,16 @@ def simulate_portfolio_mark_to_market(
                 break
             trade_ptr += 1
 
+            # Long-only MVP with no shorting: bearish setups and non-BUY directions must never enter
+            if str(t_cand.get("direction", "BUY")).upper() != "BUY":
+                continue
+            feats = t_cand.get("features", {}) or {}
+            if str(feats.get("smc_structure", "")).upper() == "BEARISH":
+                continue
+            obs = feats.get("order_blocks", [])
+            if obs and any(isinstance(ob, dict) and ob.get("type") == "BEARISH_OB" for ob in obs):
+                continue
+
             if len(active_positions) >= max_concurrent_positions:
                 skipped_signals += 1
                 continue
@@ -410,28 +420,20 @@ def evaluate_success_bar(
     positive_folds_pct: float,
     max_drawdown_pct: float,
     bar: MLSuccessBar | None = None,
+    smoke: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """
     Pre-registered success bar evaluation.
+    Evaluates and reports EVERY criterion with its actual pass/fail, even when trades < 300.
     Machine verdict is exactly one of:
+      - 'SMOKE_ONLY' (if smoke is True)
       - 'INSUFFICIENT_DATA' (if pooled_trades < min_pooled_trades)
-      - 'EDGE_SUPPORTED' (if all 5 conditions hold)
+      - 'EDGE_SUPPORTED' (if all 6 conditions hold)
       - 'NO_EVIDENCE_OF_EDGE' (otherwise)
     """
     config_bar = bar or get_settings().success_bar
 
-    # Check 1: Statistical Power (< 300 trades triggers INSUFFICIENT_DATA)
-    if pooled_trades < config_bar.min_pooled_trades:
-        return "INSUFFICIENT_DATA", {
-            "min_trades_passed": False,
-            "sharpe_above_bnh": False,
-            "sharpe_above_rule": False,
-            "bootstrap_lb_passed": False,
-            "positive_folds_passed": False,
-            "max_drawdown_passed": False,
-            "reason": f"Insufficient trades ({pooled_trades} < {config_bar.min_pooled_trades})",
-        }
-
+    min_trades_passed = bool(pooled_trades >= config_bar.min_pooled_trades)
     sharpe_above_bnh = bool(model_sharpe is not None and bnh_sharpe is not None and model_sharpe > bnh_sharpe)
     sharpe_above_rule = bool(model_sharpe is not None and rule_sharpe is not None and model_sharpe > rule_sharpe)
     bootstrap_lb_passed = bool(bootstrap_90_lb > config_bar.min_bootstrap_90_lower_bound)
@@ -440,7 +442,7 @@ def evaluate_success_bar(
     max_drawdown_passed = bool(max_drawdown_pct >= config_bar.max_drawdown_limit_pct)
 
     checks = {
-        "min_trades_passed": True,
+        "min_trades_passed": min_trades_passed,
         "sharpe_above_bnh": sharpe_above_bnh,
         "sharpe_above_rule": sharpe_above_rule,
         "bootstrap_lb_passed": bootstrap_lb_passed,
@@ -448,7 +450,13 @@ def evaluate_success_bar(
         "max_drawdown_passed": max_drawdown_passed,
     }
 
-    if all(checks.values()):
+    if smoke:
+        verdict = "SMOKE_ONLY"
+        checks["reason"] = "Smoke test run — verdict disabled"
+    elif not min_trades_passed:
+        verdict = "INSUFFICIENT_DATA"
+        checks["reason"] = f"Insufficient trades ({pooled_trades} < {config_bar.min_pooled_trades})"
+    elif all(checks.values()):
         verdict = "EDGE_SUPPORTED"
     else:
         verdict = "NO_EVIDENCE_OF_EDGE"
