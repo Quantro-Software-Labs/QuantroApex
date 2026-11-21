@@ -119,13 +119,19 @@ def simulate_portfolio_mark_to_market(
 
     # Sort candidate trades chronologically by entry_time
     def _parse_t(val: Any) -> datetime:
+        if val is None:
+            return datetime.fromtimestamp(0, tz=timezone.utc)
         if isinstance(val, str):
             val = datetime.fromisoformat(val.replace("Z", "+00:00"))
-        if val.tzinfo is None:
-            val = val.replace(tzinfo=timezone.utc)
-        return val.astimezone(timezone.utc)
+        if hasattr(val, "tzinfo"):
+            if val.tzinfo is None:
+                val = val.replace(tzinfo=timezone.utc)
+            return val.astimezone(timezone.utc)
+        return datetime.fromtimestamp(0, tz=timezone.utc)
 
-    sorted_trades = sorted(trades, key=lambda x: _parse_t(x["entry_time"]))
+    sorted_trades = sorted(
+        trades, key=lambda x: _parse_t(x.get("entry_time") or x.get("timestamp"))
+    )
 
     cash = float(initial_equity)
     prev_equity = float(initial_equity)
@@ -182,7 +188,10 @@ def simulate_portfolio_mark_to_market(
                 skipped_signals += 1
                 continue
 
-            entry_px = float(t_cand["entry_price"])
+            entry_px = float(t_cand.get("entry_price") or t_cand.get("entry_fill_price") or 100.0)
+            exit_px = float(t_cand.get("exit_price") or t_cand.get("exit_fill_price") or entry_px)
+            exit_t = _parse_t(t_cand.get("exit_time") or t_cand.get("timestamp"))
+
             shares = (actual_capital * (1.0 - fee_per_side)) / entry_px
             cash -= actual_capital
 
@@ -190,9 +199,9 @@ def simulate_portfolio_mark_to_market(
                 "symbol": t_cand.get("symbol", "UNKNOWN"),
                 "shares": shares,
                 "entry_price": entry_px,
-                "exit_price": float(t_cand["exit_price"]),
+                "exit_price": exit_px,
                 "entry_time": e_time,
-                "exit_time": _parse_t(t_cand["exit_time"]),
+                "exit_time": exit_t,
             })
 
         # 3. Mark remaining open positions to day close
