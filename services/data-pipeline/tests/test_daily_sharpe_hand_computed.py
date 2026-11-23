@@ -115,7 +115,7 @@ def test_multiday_trade_mark_to_market_daily_sharpe():
         }
     ]
 
-    dates, daily_rets, eq_curve, skipped = simulate_portfolio_mark_to_market(
+    dates, daily_rets, eq_curve, skipped, rejected = simulate_portfolio_mark_to_market(
         trades=trades,
         daily_closes_by_symbol=daily_closes,
         start_date=d1,
@@ -128,6 +128,7 @@ def test_multiday_trade_mark_to_market_daily_sharpe():
 
     assert len(dates) == 5
     assert skipped == 0
+    assert rejected == 0
 
     # Verify daily returns
     assert abs(daily_rets[0] - 0.005) < 1e-7

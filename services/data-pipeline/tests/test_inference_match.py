@@ -78,8 +78,8 @@ def test_realistic_fill_and_no_force_close():
     assert len(trades) == 1
     t0 = trades[0]
     # Trade entered at bar 1's open (105.0), NOT bar 0's close (100.0)
-    slip = settings.slippage_bps_crypto / 10000.0
-    expected_entry = 105.0 * (1.0 + slip)
+    per_side_friction = (settings.slippage_bps_crypto + getattr(settings, "half_spread_bps_crypto", 5.0)) / 10000.0
+    expected_entry = 105.0 * (1.0 + per_side_friction)
     assert abs(t0["entry_price"] - expected_entry) < 1e-4
 
     # On Bar 2, both TP (105 * 1.08 = 113.4 < 115) and SL (105 * 0.95 = 99.75 > 90) were hit.

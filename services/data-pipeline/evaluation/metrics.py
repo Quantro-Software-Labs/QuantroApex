@@ -25,6 +25,7 @@ Key requirements:
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -95,9 +96,10 @@ def simulate_portfolio_mark_to_market(
     end_date: datetime,
     max_concurrent_positions: int = 10,
     position_size_frac: float = 0.10,
-    fee_per_side: float = 0.0010,
+    fee_per_side: float = 0.0040,
     initial_equity: float = 1000.0,
-) -> tuple[list[datetime], np.ndarray, np.ndarray, int]:
+    test_mode: bool | None = None,
+) -> tuple[list[datetime], np.ndarray, np.ndarray, int, int]:
     """
     Simulate a portfolio of up to max_concurrent_positions (default 10),
     each taking a fixed position_size_frac (default 10%) of current equity at entry.
@@ -137,6 +139,7 @@ def simulate_portfolio_mark_to_market(
     prev_equity = float(initial_equity)
     active_positions: list[dict[str, Any]] = []
     skipped_signals = 0
+    rejected_invalid_trades = 0
 
     dates: list[datetime] = []
     daily_rets: list[float] = []
@@ -169,13 +172,37 @@ def simulate_portfolio_mark_to_market(
             trade_ptr += 1
 
             # Long-only MVP with no shorting: bearish setups and non-BUY directions must never enter
+            is_invalid = False
+            invalid_reason = ""
             if str(t_cand.get("direction", "BUY")).upper() != "BUY":
-                continue
-            feats = t_cand.get("features", {}) or {}
-            if str(feats.get("smc_structure", "")).upper() == "BEARISH":
-                continue
-            obs = feats.get("order_blocks", [])
-            if obs and any(isinstance(ob, dict) and ob.get("type") == "BEARISH_OB" for ob in obs):
+                is_invalid = True
+                invalid_reason = f"non-BUY direction: {t_cand.get('direction')}"
+            else:
+                feats = t_cand.get("features", {}) or {}
+                if str(feats.get("smc_structure", "")).upper() == "BEARISH":
+                    is_invalid = True
+                    invalid_reason = "bearish smc_structure"
+                else:
+                    obs = feats.get("order_blocks", [])
+                    if obs and any(isinstance(ob, dict) and ob.get("type") == "BEARISH_OB" for ob in obs):
+                        is_invalid = True
+                        invalid_reason = "bearish order block present"
+
+            if is_invalid:
+                is_test_mode = (
+                    test_mode
+                    if test_mode is not None
+                    else (
+                        "pytest" in sys.modules
+                        or os.environ.get("PYTEST_CURRENT_TEST") is not None
+                        or os.environ.get("NODE_ENV") == "test"
+                    )
+                )
+                if is_test_mode:
+                    raise ValueError(
+                        f"Invalid trade detected in simulate_portfolio_mark_to_market ({invalid_reason}): {t_cand}"
+                    )
+                rejected_invalid_trades += 1
                 continue
 
             if len(active_positions) >= max_concurrent_positions:
@@ -223,14 +250,20 @@ def simulate_portfolio_mark_to_market(
         prev_equity = day_equity
         cur = day_end
 
-    return dates, np.array(daily_rets, dtype=np.float64), np.array(equity_curve, dtype=np.float64), skipped_signals
+    return (
+        dates,
+        np.array(daily_rets, dtype=np.float64),
+        np.array(equity_curve, dtype=np.float64),
+        skipped_signals,
+        rejected_invalid_trades,
+    )
 
 
 def compute_buy_and_hold_basket(
     daily_closes_by_symbol: dict[str, dict[datetime, float]],
     start_date: datetime,
     end_date: datetime,
-    fee_per_side: float = 0.0010,
+    fee_per_side: float = 0.0040,
     initial_equity: float = 1.0,
 ) -> tuple[list[datetime], np.ndarray, np.ndarray]:
     """

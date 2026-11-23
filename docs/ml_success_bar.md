@@ -72,3 +72,27 @@ Trades from low-count folds remain fully included in the pooled out-of-sample me
 1. The final 6 months of historical data for each asset are sealed as an untouched holdout set.
 2. The holdout is never accessible during feature engineering, model training, or hyperparameter selection.
 3. Access to the holdout requires explicit invocation with `--final-holdout`. Every access is cryptographically audited and appended with an ISO-8601 UTC timestamp to `holdout_access.log`.
+
+---
+
+## 5. Cost assumptions (set before first full run)
+
+**Effective Date**: 2026-11-21
+
+To reflect real user outcomes under the QuantroApex execution architecture, evaluation net returns are calculated using the API gateway's crypto SIM cost model:
+
+### Primary Cost Model (Mandatory for Verdict)
+- **Taker fee**: 25 bps (0.25%) per side
+- **Half-spread**: 5 bps (0.05%) per side
+- **Slippage**: 10 bps (0.10%) per side
+- **Total per side**: 40 bps (0.40% / 0.0040)
+- **Round-trip total**: 80 bps (0.80% / 0.0080)
+
+This primary cost model (80 bps round-trip) exclusively determines trade labels, portfolio mark-to-market returns, fold outcomes, and the machine verdict (`EDGE_SUPPORTED`, `NO_EVIDENCE_OF_EDGE`, `INSUFFICIENT_DATA`).
+
+### Cost Sensitivity Levels (Diagnostic Only)
+For transparency, evaluation is additionally rerun on the pooled results at:
+1. **Low cost**: 20 bps round-trip (0.20% / 0.0020; 10 bps per side)
+2. **Mid cost**: 40 bps round-trip (0.40% / 0.0040; 20 bps per side)
+
+These sensitivity levels are purely informational and do not alter the pre-registered verdict.

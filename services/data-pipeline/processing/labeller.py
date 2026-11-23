@@ -402,13 +402,19 @@ class StrategyLabeller:
     ) -> list[dict[str, Any]]:
         # Fills: enter at NEXT bar's open.
         # Check SL and TP against bar high/low (if both hit in one bar, stop hits first).
-        # Fees + slippage: crypto default 10 bps fee + 10 bps slippage; stocks default 5 bps fee + 5 bps slippage.
+        # Fees + spread + slippage matching api-gateway crypto SIM model:
+        # 25 bps fee per side (50 bps RT) + 5 bps half-spread per side (10 bps RT) + 10 bps slippage per side (20 bps RT) = 80 bps RT.
         # Max horizon: 60 bars.
         # Trades still open at end of data are dropped, never force-closed.
         is_crypto = str(asset_class).upper() == "CRYPTO"
         if fee_rate is None:
-            fee_rate = (settings.fee_bps_crypto if is_crypto else settings.fee_bps_stocks) / 10_000.0
-        slip_rate = (settings.slippage_bps_crypto if is_crypto else settings.slippage_bps_stocks) / 10_000.0
+            fee_rate = (settings.fee_bps_crypto * 2.0 if is_crypto else settings.fee_bps_stocks * 2.0) / 10_000.0
+        per_side_friction = (
+            (settings.slippage_bps_crypto + getattr(settings, "half_spread_bps_crypto", 5.0))
+            if is_crypto
+            else (settings.slippage_bps_stocks + getattr(settings, "half_spread_bps_stocks", 2.5))
+        )
+        slip_rate = per_side_friction / 10_000.0
 
         opens = df["open"].to_numpy(dtype=np.float64)
         highs = df["high"].to_numpy(dtype=np.float64)

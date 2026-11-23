@@ -77,10 +77,11 @@ from training.dataset import (
     fit_dataset_scaler,
     sample_label,
 )
+from config import PRIMARY_CRYPTO_ROUND_TRIP_COST, PRIMARY_CRYPTO_COST_PER_SIDE
 from training.model import GlobalBrain
 from training.sequences import attach_feature_sequences, filter_sequence_ready
 
-DEFAULT_FEE = 0.0010  # 10 bps round-trip
+DEFAULT_FEE = PRIMARY_CRYPTO_ROUND_TRIP_COST  # 80 bps round-trip (0.0080) matching gateway SIM defaults
 
 REQUIRED_STREAMS: list[tuple[str, str]] = [
     ("BTCUSDT", "1h"),
@@ -226,6 +227,30 @@ def _exit_time_key(sample: dict[str, Any], default_horizon_hours: int = 10) -> d
     return entry + timedelta(hours=default_horizon_hours)
 
 
+def _sample_timeframe(sample: dict[str, Any]) -> str:
+    tf = str(sample.get("timeframe") or "").lower()
+    return "4h" if "4" in tf else "1h"
+
+
+def _sample_horizon_td(sample: dict[str, Any], horizon_bars: int = 60) -> timedelta:
+    tf = _sample_timeframe(sample)
+    if tf == "4h":
+        return timedelta(hours=4 * horizon_bars)  # 240 hours = 10 days
+    return timedelta(hours=1 * horizon_bars)  # 60 hours = 2.5 days
+
+
+def _sample_exit_window_end(sample: dict[str, Any], horizon_bars: int = 60) -> datetime:
+    """
+    Returns the maximum potential timestamp this sample's outcome spans:
+    the later of its recorded exit_time or its full 60-bar horizon window.
+    """
+    entry_t = _entry_time_key(sample)
+    max_horizon_t = entry_t + _sample_horizon_td(sample, horizon_bars)
+    default_h = 60 if _sample_timeframe(sample) == "1h" else 240
+    actual_exit = _exit_time_key(sample, default_horizon_hours=default_h)
+    return max(actual_exit, max_horizon_t)
+
+
 def get_purged_train_test_indices(
     n_samples: int,
     test_start: int,
@@ -288,12 +313,32 @@ def compute_purged_walk_forward_folds(
         train_part = [dev_samples[i] for i in train_idx]
         test_part = [dev_samples[i] for i in test_idx]
 
+        n_tr_1h = sum(1 for s in train_part if _sample_timeframe(s) == "1h")
+        n_tr_4h = sum(1 for s in train_part if _sample_timeframe(s) == "4h")
+        n_te_1h = sum(1 for s in test_part if _sample_timeframe(s) == "1h")
+        n_te_4h = sum(1 for s in test_part if _sample_timeframe(s) == "4h")
+        train_1h_entries = [_entry_time_key(s) for s in train_part if _sample_timeframe(s) == "1h"]
+        train_4h_entries = [_entry_time_key(s) for s in train_part if _sample_timeframe(s) == "4h"]
+        eff_end_1h = max(train_1h_entries) if train_1h_entries else None
+        eff_end_4h = max(train_4h_entries) if train_4h_entries else None
+
         meta = {
             "fold": k,
             "train_indices": train_idx,
             "test_indices": test_idx,
             "n_train": len(train_part),
+            "n_train_1h": n_tr_1h,
+            "n_train_4h": n_tr_4h,
+            "purged_total": 0,
+            "purged_1h": 0,
+            "purged_4h": 0,
+            "effective_train_end_1h": eff_end_1h.isoformat() if eff_end_1h else "",
+            "effective_train_end_4h": eff_end_4h.isoformat() if eff_end_4h else "",
             "n_test": len(test_part),
+            "n_test_1h": n_te_1h,
+            "n_test_4h": n_te_4h,
+            "train_from": _entry_time_key(train_part[0]).isoformat() if train_part else "",
+            "train_to": _entry_time_key(train_part[-1]).isoformat() if train_part else "",
             "test_from": _entry_time_key(test_part[0]).isoformat() if test_part else "",
             "test_to": _entry_time_key(test_part[-1]).isoformat() if test_part else "",
         }
@@ -308,26 +353,38 @@ def compute_rolling_time_folds(
     test_months: int = 3,
     step_months: int = 3,
     holdout_months: int = 6,
-    horizon_bars: int = 10,
-    embargo_bars: int = 10,
+    horizon_bars: int = 60,
+    embargo_bars: int = 24,
 ) -> tuple[
     list[tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]],
     list[dict[str, Any]],
 ]:
     """
     Time-based rolling walk-forward: 12-month train, 3-month test, 3-month step.
-    Locks final 6 months of data as untouched holdout.
+    Locks final 6 months of data as untouched holdout with >= 24h embargo.
+    Strictly purges training samples per timeframe (60h for 1h, 240h for 4h):
+    any sample whose exit window or exit timestamp reaches or exceeds test start is dropped.
     """
     ordered = sorted(samples, key=_entry_time_key)
     if len(ordered) < 10:
         raise ValueError(f"Insufficient samples: {len(ordered)}")
 
     first_time = _entry_time_key(ordered[0])
-    last_time = _exit_time_key(ordered[-1])
+    last_time = max(_exit_time_key(s) for s in ordered[-100:])
 
     # Holdout cutoff: last_time - holdout_months
     holdout_cutoff = last_time - timedelta(days=holdout_months * 30)
-    dev_samples = [s for s in ordered if _entry_time_key(s) < holdout_cutoff]
+    embargo_td = timedelta(hours=max(embargo_bars, 24))
+
+    # Strict purge applied to holdout boundary: any sample whose exit window or exit time
+    # reaches or exceeds (holdout_cutoff - embargo_td) is purged from development.
+    holdout_purge_limit = holdout_cutoff - embargo_td
+    dev_samples = [
+        s for s in ordered
+        if _entry_time_key(s) < holdout_cutoff
+        and _exit_time_key(s) < holdout_purge_limit
+        and _sample_exit_window_end(s, horizon_bars) < holdout_purge_limit
+    ]
     holdout_samples = [s for s in ordered if _entry_time_key(s) >= holdout_cutoff]
 
     if not dev_samples:
@@ -338,8 +395,6 @@ def compute_rolling_time_folds(
     train_td = timedelta(days=train_months * 30)
     test_td = timedelta(days=test_months * 30)
     step_td = timedelta(days=step_months * 30)
-    horizon_td = timedelta(hours=horizon_bars)
-    embargo_td = timedelta(hours=embargo_bars)
 
     start_t = _entry_time_key(dev_samples[0])
     dev_end_t = holdout_cutoff
@@ -356,24 +411,57 @@ def compute_rolling_time_folds(
         if cur_test_end > dev_end_t and folds:
             break
 
-        # Purging: train samples must exit before (cur_test_start - horizon_td)
-        purge_limit = cur_test_start - horizon_td
-        train_part = [
+        # Raw candidates in train time window [cur_train_start, cur_train_end)
+        raw_candidates = [
             s for s in dev_samples
-            if cur_train_start <= _entry_time_key(s) and _exit_time_key(s) < purge_limit
+            if cur_train_start <= _entry_time_key(s) < cur_train_end
+        ]
+        raw_1h = sum(1 for s in raw_candidates if _sample_timeframe(s) == "1h")
+        raw_4h = sum(1 for s in raw_candidates if _sample_timeframe(s) == "4h")
+
+        # Strict purge per timeframe:
+        # Drop every training sample whose exit window (entry_bar + 60 bars of its own timeframe)
+        # or exit timestamp reaches or exceeds test start (exit_time >= test_start).
+        train_part = [
+            s for s in raw_candidates
+            if _exit_time_key(s) < cur_test_start
+            and _sample_exit_window_end(s, horizon_bars) < cur_test_start
         ]
 
-        # Test samples
+        n_tr_1h = sum(1 for s in train_part if _sample_timeframe(s) == "1h")
+        n_tr_4h = sum(1 for s in train_part if _sample_timeframe(s) == "4h")
+        purged_1h = raw_1h - n_tr_1h
+        purged_4h = raw_4h - n_tr_4h
+        purged_total = purged_1h + purged_4h
+
+        train_1h_entries = [_entry_time_key(s) for s in train_part if _sample_timeframe(s) == "1h"]
+        train_4h_entries = [_entry_time_key(s) for s in train_part if _sample_timeframe(s) == "4h"]
+        eff_end_1h = max(train_1h_entries) if train_1h_entries else None
+        eff_end_4h = max(train_4h_entries) if train_4h_entries else None
+
+        # Test samples in [cur_test_start, cur_test_end)
         test_part = [
             s for s in dev_samples
             if cur_test_start <= _entry_time_key(s) < cur_test_end
         ]
+        n_te_1h = sum(1 for s in test_part if _sample_timeframe(s) == "1h")
+        n_te_4h = sum(1 for s in test_part if _sample_timeframe(s) == "4h")
 
         if len(test_part) > 0 and len(train_part) > 0:
             meta = {
                 "fold": fold_idx,
                 "n_train": len(train_part),
+                "n_train_1h": n_tr_1h,
+                "n_train_4h": n_tr_4h,
+                "raw_train_total": len(raw_candidates),
+                "purged_total": purged_total,
+                "purged_1h": purged_1h,
+                "purged_4h": purged_4h,
+                "effective_train_end_1h": eff_end_1h.isoformat() if eff_end_1h else "",
+                "effective_train_end_4h": eff_end_4h.isoformat() if eff_end_4h else "",
                 "n_test": len(test_part),
+                "n_test_1h": n_te_1h,
+                "n_test_4h": n_te_4h,
                 "train_from": cur_train_start.isoformat(),
                 "train_to": cur_train_end.isoformat(),
                 "test_from": cur_test_start.isoformat(),
@@ -867,8 +955,8 @@ async def run_walk_forward(
 
     # Format and print fold schedule
     fold_plan_lines = [
-        "| Fold | Train Range | Test Range | Train Samples | Test Samples |",
-        "|------|-------------|------------|---------------|--------------|",
+        "| Fold | Train Window | Test Window | Train (1h / 4h) | Purged (1h / 4h) | Eff Train End 1h | Eff Train End 4h | Test (1h / 4h) |",
+        "|------|--------------|-------------|-----------------|------------------|------------------|------------------|----------------|",
     ]
     fold_plan: list[dict[str, Any]] = []
     for train_part, test_part, meta in folds:
@@ -879,8 +967,22 @@ async def run_walk_forward(
         te_to = meta.get("test_to", "")[:10]
         n_tr = len(train_part)
         n_te = len(test_part)
+        n_tr_1h = meta.get("n_train_1h", n_tr)
+        n_tr_4h = meta.get("n_train_4h", 0)
+        purged_tot = meta.get("purged_total", 0)
+        purged_1h = meta.get("purged_1h", 0)
+        purged_4h = meta.get("purged_4h", 0)
+        eff_1h = meta.get("effective_train_end_1h", "")[:19]
+        eff_4h = meta.get("effective_train_end_4h", "")[:19]
+        n_te_1h = meta.get("n_test_1h", n_te)
+        n_te_4h = meta.get("n_test_4h", 0)
+
         fold_plan_lines.append(
-            f"| {k} | {tr_from} → {tr_to} | {te_from} → {te_to} | {n_tr:,} | {n_te:,} |"
+            f"| {k} | {tr_from} → {tr_to} | {te_from} → {te_to} | "
+            f"{n_tr:,} ({n_tr_1h:,}/{n_tr_4h:,}) | "
+            f"{purged_tot:,} ({purged_1h:,}/{purged_4h:,}) | "
+            f"{eff_1h} | {eff_4h} | "
+            f"{n_te:,} ({n_te_1h:,}/{n_te_4h:,}) |"
         )
         fold_plan.append({
             "fold": k,
@@ -889,7 +991,16 @@ async def run_walk_forward(
             "test_from": meta.get("test_from", ""),
             "test_to": meta.get("test_to", ""),
             "n_train": n_tr,
+            "n_train_1h": n_tr_1h,
+            "n_train_4h": n_tr_4h,
+            "purged_total": purged_tot,
+            "purged_1h": purged_1h,
+            "purged_4h": purged_4h,
+            "effective_train_end_1h": meta.get("effective_train_end_1h", ""),
+            "effective_train_end_4h": meta.get("effective_train_end_4h", ""),
             "n_test": n_te,
+            "n_test_1h": n_te_1h,
+            "n_test_4h": n_te_4h,
         })
     fold_plan_md = "\n".join(fold_plan_lines)
     print("\n" + "=" * 80)
@@ -995,29 +1106,31 @@ async def run_walk_forward(
         n_model_trades = len(fold_model_trades)
 
         # Portfolio simulation: 10 concurrent slots, 10% equity sizing, mark-to-market daily
-        _, m_daily, m_eq, m_skipped = simulate_portfolio_mark_to_market(
+        # fee is round-trip (0.0080); fee_side = fee / 2.0 (0.0040)
+        fee_side = fee / 2.0
+        _, m_daily, m_eq, m_skipped, m_rejected = simulate_portfolio_mark_to_market(
             fold_model_trades,
             daily_closes_by_symbol,
             f_start,
             f_end,
             max_concurrent_positions=10,
             position_size_frac=0.10,
-            fee_per_side=fee,
+            fee_per_side=fee_side,
         )
-        _, r_daily, r_eq, r_skipped = simulate_portfolio_mark_to_market(
+        _, r_daily, r_eq, r_skipped, r_rejected = simulate_portfolio_mark_to_market(
             test_samples,
             daily_closes_by_symbol,
             f_start,
             f_end,
             max_concurrent_positions=10,
             position_size_frac=0.10,
-            fee_per_side=fee,
+            fee_per_side=fee_side,
         )
         _, b_daily, b_eq = compute_buy_and_hold_basket(
             daily_closes_by_symbol,
             f_start,
             f_end,
-            fee_per_side=fee,
+            fee_per_side=fee_side,
         )
         btc_closes = daily_closes_by_symbol.get("BTCUSDT", {})
         _, btc_daily, btc_eq = compute_btc_only_buy_and_hold(
@@ -1036,7 +1149,7 @@ async def run_walk_forward(
 
         m_tot_ret = ((m_eq[-1] - m_eq[0]) / m_eq[0] * 100.0) if len(m_eq) > 1 else 0.0
         m_win_rate = float(
-            sum(1 for s in fold_model_trades if float(s.get("pnl_pct") or 0.0) - (2 * fee) > 0) / n_model_trades
+            sum(1 for s in fold_model_trades if float(s.get("pnl_pct") or 0.0) - fee > 0) / n_model_trades
         ) if n_model_trades > 0 else 0.0
         m_max_dd = compute_max_drawdown(m_eq)
 
@@ -1057,6 +1170,7 @@ async def run_walk_forward(
             "model": {
                 "trades_taken": float(n_model_trades),
                 "skipped_signals": m_skipped,
+                "rejected_invalid_trades": m_rejected,
                 "win_rate": m_win_rate,
                 "avg_return_pct": m_tot_ret,
                 "annualized_sharpe": m_sharpe,
@@ -1066,6 +1180,7 @@ async def run_walk_forward(
             "rule_only": {
                 "trades_taken": float(len(test_samples)),
                 "skipped_signals": r_skipped,
+                "rejected_invalid_trades": r_rejected,
                 "annualized_sharpe": r_sharpe,
             },
             "buy_and_hold": {
@@ -1112,29 +1227,30 @@ async def run_walk_forward(
         latest_test_date = datetime.now(timezone.utc)
 
     all_oos_model_trades = [s for s, take in zip(all_oos_test_samples, all_oos_model_preds) if take == 1]
-    _, pool_m_daily, pool_m_eq, pool_m_skipped = simulate_portfolio_mark_to_market(
+    fee_side = fee / 2.0
+    _, pool_m_daily, pool_m_eq, pool_m_skipped, pool_m_rejected = simulate_portfolio_mark_to_market(
         all_oos_model_trades,
         daily_closes_by_symbol,
         earliest_test_date,
         latest_test_date,
         max_concurrent_positions=10,
         position_size_frac=0.10,
-        fee_per_side=fee,
+        fee_per_side=fee_side,
     )
-    _, pool_r_daily, pool_r_eq, pool_r_skipped = simulate_portfolio_mark_to_market(
+    _, pool_r_daily, pool_r_eq, pool_r_skipped, pool_r_rejected = simulate_portfolio_mark_to_market(
         all_oos_test_samples,
         daily_closes_by_symbol,
         earliest_test_date,
         latest_test_date,
         max_concurrent_positions=10,
         position_size_frac=0.10,
-        fee_per_side=fee,
+        fee_per_side=fee_side,
     )
     _, pool_b_daily, pool_b_eq = compute_buy_and_hold_basket(
         daily_closes_by_symbol,
         earliest_test_date,
         latest_test_date,
-        fee_per_side=fee,
+        fee_per_side=fee_side,
     )
     btc_closes = daily_closes_by_symbol.get("BTCUSDT", {})
     _, pool_btc_daily, pool_btc_eq = compute_btc_only_buy_and_hold(
@@ -1142,6 +1258,12 @@ async def run_walk_forward(
         earliest_test_date,
         latest_test_date,
     )
+
+    total_rejected_invalid_trades = pool_m_rejected + pool_r_rejected
+    if total_rejected_invalid_trades > 0:
+        logger.error(
+            f"Upstream bug detected: {total_rejected_invalid_trades} invalid trades reached portfolio simulation!"
+        )
 
     pooled_trades_taken = len(all_oos_model_trades)
     pooled_m_sharpe = compute_daily_sharpe(pool_m_daily, annualization_factor=annualization_factor)
@@ -1194,6 +1316,58 @@ async def run_walk_forward(
         train_base_rate_pct=round(pooled_train_base_rate, 2),
     )
 
+    # Cost sensitivity analysis: re-evaluate ONLY the portfolio (not training) at 0.20% and 0.40% round-trip
+    cost_sensitivity: list[dict[str, Any]] = []
+    pooled_m_net_ret = ((pool_m_eq[-1] - pool_m_eq[0]) / pool_m_eq[0] * 100.0) if len(pool_m_eq) > 1 else 0.0
+
+    for sens_rt in [0.0020, 0.0040]:
+        sens_side = sens_rt / 2.0
+        _, s_daily, s_eq, _, _ = simulate_portfolio_mark_to_market(
+            all_oos_model_trades,
+            daily_closes_by_symbol,
+            earliest_test_date,
+            latest_test_date,
+            max_concurrent_positions=10,
+            position_size_frac=0.10,
+            fee_per_side=sens_side,
+        )
+        s_sharpe = compute_daily_sharpe(s_daily, annualization_factor=annualization_factor)
+        s_ret = ((s_eq[-1] - s_eq[0]) / s_eq[0] * 100.0) if len(s_eq) > 1 else 0.0
+        cost_sensitivity.append({
+            "round_trip_pct": round(sens_rt * 100.0, 2),
+            "round_trip_bps": round(sens_rt * 10_000.0, 1),
+            "fee_per_side_bps": round(sens_side * 10_000.0, 1),
+            "pooled_sharpe": round(s_sharpe, 2) if s_sharpe is not None else None,
+            "trades_taken": pooled_trades_taken,
+            "net_return_pct": round(s_ret, 2),
+            "is_primary": False,
+        })
+
+    # Primary cost entry
+    cost_sensitivity.append({
+        "round_trip_pct": round(fee * 100.0, 2),
+        "round_trip_bps": round(fee * 10_000.0, 1),
+        "fee_per_side_bps": round(fee_side * 10_000.0, 1),
+        "pooled_sharpe": round(pooled_m_sharpe, 2) if pooled_m_sharpe is not None else None,
+        "trades_taken": pooled_trades_taken,
+        "net_return_pct": round(pooled_m_net_ret, 2),
+        "is_primary": True,
+    })
+
+    cost_sens_lines = [
+        "| Round-Trip Cost | Per-Side Fee | Pooled Sharpe | Trades Taken | Net Return | Role |",
+        "|-----------------|--------------|---------------|--------------|------------|------|",
+    ]
+    for cs in cost_sensitivity:
+        role_str = "**PRIMARY (Governs Pre-Registered Verdict)**" if cs["is_primary"] else "Diagnostic Sensitivity"
+        sh_str = f"{cs['pooled_sharpe']:.2f}" if cs["pooled_sharpe"] is not None else "null"
+        cost_sens_lines.append(
+            f"| {cs['round_trip_bps']:.1f} bps ({cs['round_trip_pct']:.2f}%) | "
+            f"{cs['fee_per_side_bps']:.1f} bps | {sh_str} | {cs['trades_taken']:,} | "
+            f"{cs['net_return_pct']:+.2f}% | {role_str} |"
+        )
+    cost_sensitivity_md = "\n".join(cost_sens_lines)
+
     # Final holdout handling: guarded strictly
     holdout_report: dict[str, Any] = {"locked": True, "n_samples": len(final_holdout)}
     if allow_holdout:
@@ -1228,6 +1402,13 @@ async def run_walk_forward(
         "n_folds": n_total_folds,
         "positive_folds": f"{positive_folds} of {n_total_folds}",
         "positive_folds_pct": round(pos_folds_pct, 1),
+        "rejected_invalid_trades": total_rejected_invalid_trades,
+        "cost_model": {
+            "primary_round_trip_bps": round(fee * 10_000.0, 1),
+            "primary_round_trip_pct": round(fee * 100.0, 2),
+            "fee_bps_per_side": round(fee_side * 10_000.0, 1),
+            "cost_sensitivity": cost_sensitivity,
+        },
         "coverage_table": coverage_rows,
         "coverage_table_md": coverage_table_md,
         "fold_plan": fold_plan,
@@ -1313,6 +1494,10 @@ async def run_walk_forward(
 
 {markdown_table}
 
+## Cost Sensitivity Analysis
+
+{cost_sensitivity_md}
+
 ## Pre-Registered Success Bar Evaluation
 - Minimum Trades (>= 300): `{'PASSED' if checks['min_trades_passed'] else 'FAILED'}` ({pooled_trades_taken} trades)
 - Sharpe Above Buy-and-Hold Basket: `{'PASSED' if checks['sharpe_above_bnh'] else 'FAILED'}` ({pooled_m_sharpe:.2f} vs {pooled_b_sharpe:.2f})
@@ -1325,6 +1510,7 @@ async def run_walk_forward(
 - **Training Base Rate**: {diagnostics.get('train_base_rate_pct', 'N/A')}% positive labels
 - **Costs as % of Gross PnL**: {cost_pnl_str}
 - **Costs as % of Capital Traded**: {cost_cap_str}
+- **Rejected Invalid Trades**: {total_rejected_invalid_trades} (must be 0)
 """
 
     out_json = os.path.join(checkpoint_dir, "walk_forward_report.json")
@@ -1359,21 +1545,30 @@ def main() -> None:
     args = parser.parse_args()
 
     async def _run() -> None:
-        await apply_schema()
-        await run_walk_forward(
-            checkpoint=args.checkpoint,
-            train_epochs=args.epochs,
-            min_win_prob=args.min_win_prob,
-            asset_class=args.asset_class or None,
-            strategy_id=args.strategy_id,
-            n_folds=args.folds,
-            parquet_dir=args.parquet_dir,
-            checkpoint_dir=args.checkpoint_dir,
-            smoke=args.smoke,
-            allow_holdout=args.final_holdout,
-            plan_only=args.plan_only,
-        )
-        await close_pool()
+        if not args.parquet_dir:
+            try:
+                await apply_schema()
+            except Exception as e:
+                logger.warning(f"Could not connect to Postgres database: {e}")
+        try:
+            await run_walk_forward(
+                checkpoint=args.checkpoint,
+                train_epochs=args.epochs,
+                min_win_prob=args.min_win_prob,
+                asset_class=args.asset_class or None,
+                strategy_id=args.strategy_id,
+                n_folds=args.folds,
+                parquet_dir=args.parquet_dir,
+                checkpoint_dir=args.checkpoint_dir,
+                smoke=args.smoke,
+                allow_holdout=args.final_holdout,
+                plan_only=args.plan_only,
+            )
+        finally:
+            try:
+                await close_pool()
+            except Exception:
+                pass
 
     asyncio.run(_run())
 

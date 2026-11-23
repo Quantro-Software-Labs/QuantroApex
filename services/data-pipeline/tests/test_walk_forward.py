@@ -5,6 +5,11 @@ from datetime import datetime, timedelta, timezone
 from evaluation.walk_forward import (
     get_purged_train_test_indices,
     compute_purged_walk_forward_folds,
+    compute_rolling_time_folds,
+    _entry_time_key,
+    _exit_time_key,
+    _sample_timeframe,
+    _sample_horizon_td,
     compute_performance_metrics,
     bootstrap_sharpe_difference,
 )
@@ -110,3 +115,103 @@ def test_performance_metrics_and_bootstrap():
     bnh_returns = np.array([0.01, -0.01, 0.00, 0.01, -0.02, 0.02, -0.01], dtype=np.float64)
     lb = bootstrap_sharpe_difference(returns, bnh_returns, n_bootstraps=200, alpha=0.10)
     assert isinstance(lb, float)
+
+
+def test_no_training_sample_exit_reaches_test_start_per_timeframe():
+    """
+    Requirement 2 unit test:
+    Assert no training sample's exit timestamp >= its fold's test start for both 1h and 4h.
+    Also verifies:
+    1. 60-bar horizon purging (60h for 1h, 240h for 4h).
+    2. Effective train end per timeframe.
+    3. Purged counts per timeframe.
+    4. 24h embargo before holdout.
+    """
+    start_dt = datetime(2021, 1, 1, 0, 0, tzinfo=timezone.utc)
+    total_days = 365 * 3  # 3 years
+    samples = []
+
+    # Generate alternating 1h and 4h samples across 3 years
+    for day in range(0, total_days, 2):
+        t_base = start_dt + timedelta(days=day)
+
+        # 1h sample: 60-bar horizon = 60 hours
+        t_entry_1h = t_base + timedelta(hours=10)
+        # Some exit at bar 10, some at full 60h horizon
+        duration_1h = 10 if (day % 4 == 0) else 60
+        t_exit_1h = t_entry_1h + timedelta(hours=duration_1h)
+        samples.append({
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "entry_time": t_entry_1h.isoformat(),
+            "exit_time": t_exit_1h.isoformat(),
+            "outcome": "WIN" if day % 3 == 0 else "LOSS",
+            "pnl_pct": 0.015,
+            "hold_duration": duration_1h,
+        })
+
+        # 4h sample: 60-bar horizon = 240 hours (10 days)
+        t_entry_4h = t_base + timedelta(hours=14)
+        duration_4h = 40 if (day % 4 == 0) else 240
+        t_exit_4h = t_entry_4h + timedelta(hours=duration_4h)
+        samples.append({
+            "symbol": "BTCUSDT",
+            "timeframe": "4h",
+            "entry_time": t_entry_4h.isoformat(),
+            "exit_time": t_exit_4h.isoformat(),
+            "outcome": "WIN" if day % 5 == 0 else "LOSS",
+            "pnl_pct": 0.02,
+            "hold_duration": duration_4h,
+        })
+
+    folds, holdout = compute_rolling_time_folds(
+        samples,
+        train_months=12,
+        test_months=3,
+        step_months=3,
+        holdout_months=6,
+        horizon_bars=60,
+        embargo_bars=24,
+    )
+
+    assert len(folds) >= 3, f"Expected >= 3 folds, got {len(folds)}"
+    assert len(holdout) > 0, "Expected non-empty holdout set"
+
+    for train_part, test_part, meta in folds:
+        test_start = datetime.fromisoformat(meta["test_from"])
+
+        assert len(train_part) > 0, f"Fold {meta['fold']} has empty train_part"
+        assert len(test_part) > 0, f"Fold {meta['fold']} has empty test_part"
+
+        # Assert no training sample's exit timestamp >= its fold's test start for both 1h and 4h
+        for s in train_part:
+            tf = _sample_timeframe(s)
+            exit_t = _exit_time_key(s)
+            entry_t = _entry_time_key(s)
+            horizon_td = _sample_horizon_td(s, 60)
+            horizon_exit = entry_t + horizon_td
+
+            # Core assertions requested by user:
+            assert exit_t < test_start, (
+                f"Fold {meta['fold']} ({tf}): Training sample exit {exit_t.isoformat()} "
+                f">= test start {test_start.isoformat()}"
+            )
+            assert horizon_exit < test_start, (
+                f"Fold {meta['fold']} ({tf}): Training sample 60-bar horizon exit {horizon_exit.isoformat()} "
+                f">= test start {test_start.isoformat()}"
+            )
+
+        # Check effective train end per timeframe
+        assert meta["n_train_1h"] > 0
+        assert meta["n_train_4h"] > 0
+        assert meta["purged_1h"] > 0, "Expected some 1h samples to be purged near train boundary"
+        assert meta["purged_4h"] > 0, "Expected some 4h samples to be purged near train boundary"
+
+        eff_1h = datetime.fromisoformat(meta["effective_train_end_1h"])
+        eff_4h = datetime.fromisoformat(meta["effective_train_end_4h"])
+
+        # Effective 1h end must be at least 60h prior to test_start
+        assert eff_1h <= test_start - timedelta(hours=60)
+        # Effective 4h end must be at least 240h prior to test_start
+        assert eff_4h <= test_start - timedelta(hours=240)
+

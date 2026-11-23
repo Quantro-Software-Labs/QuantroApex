@@ -115,15 +115,35 @@ def compute_diagnostics(
                 "realised_win_rate": round(wins / count, 4),
             })
 
-    # Turnover & Cost Impact
+    # Turnover & Cost Impact computed dynamically from actual trades
     gross_pnls = [float(s.get("pnl_pct", 0.0)) for s in model_samples]
     total_gross = float(np.sum(gross_pnls)) * 100.0 if gross_pnls else 0.0
+
+    fee_per_side = fee_round_trip / 2.0
+    actual_trade_fees: list[float] = []
+    actual_trade_capitals: list[float] = []
+
+    for s in model_samples:
+        e_px = float(s.get("entry_price") or s.get("entry_fill_price") or 1.0)
+        x_px = float(s.get("exit_price") or s.get("exit_fill_price") or e_px)
+        e_fee = e_px * fee_per_side
+        x_fee = x_px * fee_per_side
+        actual_trade_fees.append(e_fee + x_fee)
+        actual_trade_capitals.append(e_px)
+
+    total_fees_paid = float(sum(actual_trade_fees))
+    total_capital_traded = float(sum(actual_trade_capitals))
+
     total_costs = float(len(model_samples) * fee_round_trip) * 100.0
     net_pnl = total_gross - total_costs
     cost_as_pct_gross = (
         round(float(abs(total_costs / total_gross) * 100.0), 2) if total_gross > 0 else None
     )
-    cost_as_pct_capital = round(float(fee_round_trip * 100.0), 4)
+    cost_as_pct_capital = (
+        round(float((total_fees_paid / total_capital_traded) * 100.0), 4)
+        if total_capital_traded > 0
+        else 0.0
+    )
 
     return {
         "by_setup_type": by_setup,

@@ -169,15 +169,28 @@ def test_bearish_setup_never_enters_portfolio_simulation():
         }
     }
 
-    dates, daily_rets, eq, skipped = simulate_portfolio_mark_to_market(
+    # 1. In test mode (default under pytest), passing invalid trades MUST raise ValueError (No Silent Filtering)
+    with pytest.raises(ValueError, match="Invalid trade detected in simulate_portfolio_mark_to_market"):
+        simulate_portfolio_mark_to_market(
+            trades=candidate_trades,
+            daily_closes_by_symbol=daily_closes,
+            start_date=start,
+            end_date=end,
+            initial_equity=1000.0,
+        )
+
+    # 2. In production mode (test_mode=False), verify it counts rejected_invalid_trades and executes 0 of them
+    dates, daily_rets, eq, skipped, rejected = simulate_portfolio_mark_to_market(
         trades=candidate_trades,
         daily_closes_by_symbol=daily_closes,
         start_date=start,
         end_date=end,
         initial_equity=1000.0,
+        test_mode=False,
     )
 
-    # None of the bearish trades should have been executed
+    # None of the bearish trades should have been executed, and all 3 rejected
+    assert rejected == 3, f"Expected 3 rejected invalid trades, got {rejected}"
     assert len(eq) > 0
     assert np.allclose(eq, 1000.0), f"Equity changed unexpectedly: {eq}"
     assert np.allclose(daily_rets, 0.0), f"Returns occurred on bearish trades: {daily_rets}"
@@ -186,12 +199,12 @@ def test_bearish_setup_never_enters_portfolio_simulation():
 def test_label_vs_evaluation_win_consistency_net_return():
     """
     Verify training label's definition of a win matches evaluation's definition of a win:
-    both consider a trade a WIN iff net return after DEFAULT_FEE (0.0010) is > 0.
+    both consider a trade a WIN iff net return after DEFAULT_FEE (0.0080 = 80 bps) is > 0.
     """
-    fee = DEFAULT_FEE  # 0.0010
+    fee = DEFAULT_FEE  # 0.0080 (80 bps round-trip)
 
-    # Case 1: Gross gain is 0.5%, well above 0.1% fee -> WIN in both
-    s1 = {"pnl_pct": 0.0050, "outcome": "WIN"}
+    # Case 1: Gross gain is 5.0%, well above 0.80% fee -> WIN in both
+    s1 = {"pnl_pct": 0.0500, "outcome": "WIN"}
     ev1 = _slice_metrics([s1], fee_round_trip=fee)
     assert s1["outcome"] == "WIN"
     assert ev1["win_rate"] == 1.0
@@ -202,8 +215,8 @@ def test_label_vs_evaluation_win_consistency_net_return():
     assert s2["outcome"] == "LOSS"
     assert ev2["win_rate"] == 0.0
 
-    # Case 3: Marginal trade: gross gain +0.05%, but fee is 0.10% -> net is -0.05% -> LOSS in both
-    raw_pnl_marginal = 0.0005
+    # Case 3: Marginal trade: gross gain +0.50% (50 bps), but fee is 0.80% (80 bps) -> net is -0.30% -> LOSS in both
+    raw_pnl_marginal = 0.0050
     net_pnl_marginal = raw_pnl_marginal - fee
     outcome_marginal = "WIN" if net_pnl_marginal > 0.0 else "LOSS"
     assert outcome_marginal == "LOSS"

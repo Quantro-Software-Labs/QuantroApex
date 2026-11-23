@@ -16,6 +16,20 @@ load_dotenv(_ROOT / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 
+# Primary crypto cost model matching services/api-gateway crypto SIM defaults:
+# Taker fee: 0.25% per side (25 bps)
+# Half-spread: 5 bps per side (0.05%)
+# Slippage: 10 bps per side (0.10%)
+# Total per side: 40 bps (0.0040) -> 80 bps round-trip (0.0080 or 0.80%)
+PRIMARY_CRYPTO_FEE_BPS: float = 25.0
+PRIMARY_CRYPTO_HALF_SPREAD_BPS: float = 5.0
+PRIMARY_CRYPTO_SLIPPAGE_BPS: float = 10.0
+PRIMARY_CRYPTO_COST_PER_SIDE: float = (
+    PRIMARY_CRYPTO_FEE_BPS + PRIMARY_CRYPTO_HALF_SPREAD_BPS + PRIMARY_CRYPTO_SLIPPAGE_BPS
+) / 10_000.0  # 0.0040
+PRIMARY_CRYPTO_ROUND_TRIP_COST: float = PRIMARY_CRYPTO_COST_PER_SIDE * 2.0  # 0.0080
+
+
 class MLSuccessBar(BaseModel):
     """
     Pre-registered success bar for ML edge validation.
@@ -29,6 +43,10 @@ class MLSuccessBar(BaseModel):
     bootstrap_n_samples: int = 1000
     bootstrap_alpha: float = 0.10
     fold_trade_threshold: int = 30  # folds with < 30 trades report Sharpe as null
+    # Primary crypto cost model (80 bps round-trip)
+    primary_cost_round_trip: float = PRIMARY_CRYPTO_ROUND_TRIP_COST
+    # Sensitivity levels (20 bps and 40 bps round-trip)
+    sensitivity_cost_levels: list[float] = [0.0020, 0.0040]
 
 
 class Settings(BaseSettings):
@@ -55,10 +73,12 @@ class Settings(BaseSettings):
     data_service_port: int = 8002
     log_level: str = "INFO"
 
-    # Cost modeling defaults: 10 bps per side crypto, 5 bps stocks
-    fee_bps_crypto: float = 10.0
+    # Cost modeling defaults: crypto matches api-gateway crypto SIM defaults (40 bps per side, 80 bps round-trip)
+    fee_bps_crypto: float = PRIMARY_CRYPTO_FEE_BPS  # 25 bps (0.25%)
     fee_bps_stocks: float = 5.0
-    slippage_bps_crypto: float = 10.0
+    half_spread_bps_crypto: float = PRIMARY_CRYPTO_HALF_SPREAD_BPS  # 5 bps
+    half_spread_bps_stocks: float = 2.5
+    slippage_bps_crypto: float = PRIMARY_CRYPTO_SLIPPAGE_BPS  # 10 bps
     slippage_bps_stocks: float = 5.0
 
     # Train/inference symmetry: gate inference strictly to rule signal bars
