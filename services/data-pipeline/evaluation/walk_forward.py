@@ -255,8 +255,8 @@ def get_purged_train_test_indices(
     n_samples: int,
     test_start: int,
     test_end: int,
-    horizon_bars: int = 10,
-    embargo_bars: int = 10,
+    horizon_bars: int = 60,
+    embargo_bars: int = 24,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute strictly causal train and test index arrays for a fold.
@@ -277,8 +277,8 @@ def compute_purged_walk_forward_folds(
     samples: list[dict[str, Any]],
     n_folds: int = 5,
     holdout_frac: float = 0.20,
-    horizon_bars: int = 10,
-    embargo_bars: int = 10,
+    horizon_bars: int = 60,
+    embargo_bars: int = 24,
 ) -> tuple[
     list[tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]],
     list[dict[str, Any]],
@@ -859,8 +859,8 @@ async def run_walk_forward(
     strategy_id: str | None = None,
     n_folds: int = 5,
     holdout_frac: float = 0.20,
-    horizon_bars: int = 10,
-    embargo_bars: int = 10,
+    horizon_bars: int = 60,
+    embargo_bars: int = 24,
     parquet_dir: str | Path | None = None,
     checkpoint_dir: str = "./checkpoints",
     smoke: bool = False,

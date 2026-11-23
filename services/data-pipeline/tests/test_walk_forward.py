@@ -6,6 +6,7 @@ from evaluation.walk_forward import (
     get_purged_train_test_indices,
     compute_purged_walk_forward_folds,
     compute_rolling_time_folds,
+    load_samples_from_parquet,
     _entry_time_key,
     _exit_time_key,
     _sample_timeframe,
@@ -214,4 +215,51 @@ def test_no_training_sample_exit_reaches_test_start_per_timeframe():
         assert eff_1h <= test_start - timedelta(hours=60)
         # Effective 4h end must be at least 240h prior to test_start
         assert eff_4h <= test_start - timedelta(hours=240)
+
+
+def test_real_parquet_samples_fold1_purge_guarantees(tmp_path):
+    """
+    Test using real sample dicts as produced by load_samples_from_parquet (not synthetic ones).
+    Verifies that with default horizon_bars=60:
+    - In Fold 1, 4h effective train end <= 2019-12-20T00:00:00 (strictly >= 240h prior to test_start).
+    - Every 4h training sample has entry_time + 240h < test_start.
+    - Every 1h training sample has entry_time + 60h < test_start.
+    - Fold 1 has no wrongly kept samples where entry + horizon >= test_start.
+    """
+    from pathlib import Path
+    import shutil
+    data_dir = Path(__file__).parents[1] / "data"
+    btc_4h = data_dir / "BTCUSDT_4h.parquet"
+    btc_1h = data_dir / "BTCUSDT_1h.parquet"
+    if not (btc_4h.exists() and btc_1h.exists()):
+        pytest.skip("Parquet data not present")
+
+    shutil.copy(btc_4h, tmp_path / "BTCUSDT_4h.parquet")
+    shutil.copy(btc_1h, tmp_path / "BTCUSDT_1h.parquet")
+
+    samples, _ = load_samples_from_parquet(tmp_path)
+    assert len(samples) > 0, "Failed to load real samples from parquet"
+
+    folds, _ = compute_rolling_time_folds(samples, horizon_bars=60)
+    assert len(folds) > 0, "No folds produced"
+
+    train_part, test_part, meta = folds[0]
+    test_start = datetime.fromisoformat(meta["test_from"])
+
+    # Verify Fold 1 effective 4h end
+    eff_4h = datetime.fromisoformat(meta["effective_train_end_4h"])
+    assert eff_4h <= test_start - timedelta(hours=240), (
+        f"Fold 1 4h effective train end {eff_4h} must be at least 240h before test start {test_start}"
+    )
+    assert eff_4h <= datetime(2019, 12, 20, 0, 0, 0, tzinfo=timezone.utc)
+
+    # Check each real sample in fold 1
+    for s in train_part:
+        entry_t = _entry_time_key(s)
+        exit_t = _exit_time_key(s)
+        tf = _sample_timeframe(s)
+        h_td = _sample_horizon_td(s, 60)
+        assert exit_t < test_start
+        assert entry_t + h_td < test_start
+
 
