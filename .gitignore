@@ -70,3 +70,4 @@ credentials.json
 *.pid
 nohup.out
 
+notebooks/drive_quantroapex/
